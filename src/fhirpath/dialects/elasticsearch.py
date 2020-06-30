@@ -57,6 +57,9 @@ class ElasticSearchDialect(DialectBase):
     @staticmethod
     def apply_nested(query, dotted_path):
         """ """
+        # FIXME
+        dotted_path = dotted_path.split(".", 1)[1]
+
         wrapper = {
             "nested": {
                 "path": dotted_path,
@@ -100,6 +103,9 @@ class ElasticSearchDialect(DialectBase):
         multiple_ = isinstance(value, (list, tuple)) or multiple is True
         if multiple_ is True and not isinstance(value, (list, tuple)):
             value = [value]
+
+        # FIXME: remove resource_type from path eg (Observation.active => active)
+        path = path.split(".", 1)[1]
 
         if multiple_:
             q = {"terms": {path: value}}
@@ -658,8 +664,10 @@ class ElasticSearchDialect(DialectBase):
     def apply_from_constraint(query, body_structure, root_replacer=None):
         """We force apply resource type boundary"""
         for res_name, _res_klass in query.get_from():
-            path_ = "{0}.resourceType".format(root_replacer or res_name)
-            term = {"term": {path_: res_name}}
+            # FIXME
+            # path_ = "{0}.resourceType".format(root_replacer or res_name)
+            # term = {"term": {path_: res_name}}
+            term = {"match": {"resourceType": res_name}}
             body_structure["query"]["bool"]["filter"].append(term)
 
     @staticmethod
@@ -677,7 +685,6 @@ class ElasticSearchDialect(DialectBase):
             2.) We might loose minor security (only zope specific),
                 because here permission is not checking while getting full object.
         """
-
         if len(query.get_select()) == 0:
             # No select no source!
             body_structure["_source"] = False
@@ -694,10 +701,11 @@ class ElasticSearchDialect(DialectBase):
 
         includes = list()
         if len(query.get_select()) == 1 and query.get_select()[0].star:
-            if root_replacer is None:
-                includes.append(query.get_from()[0][0])
-            else:
-                includes.append(root_replacer)
+            includes.append("*")
+            # if root_replacer is None:
+            #     includes.append(query.get_from()[0][0])
+            # else:
+            #     includes.append(root_replacer)
         elif len(query.get_select()) > 0:
             for path_el in query.get_select():
                 includes.append(replace(path_el))

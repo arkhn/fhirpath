@@ -368,7 +368,7 @@ class Term(BaseTerm):
             ):
                 raise ValidationError(
                     "Operator '{0!s}' is allowed for value type '{1!s}'".format(
-                        self.comparison_operator.__name__, self.path.context.type_name
+                        self.comparison_operator.__name__, self.path.context.type_name,
                     )
                 )
         else:

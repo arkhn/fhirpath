@@ -179,7 +179,7 @@ def fql(obj):
             func.__self__
         except AttributeError:
             reraise(
-                ValueError, "__fql__ is not bound method, make sure class initialized!"
+                ValueError, "__fql__ is not bound method, make sure class initialized!",
             )
 
         return func()

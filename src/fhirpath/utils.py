@@ -252,7 +252,7 @@ def expand_path(path_: Text) -> Text:
 
         try:
             real_path = path_.replace(
-                replacement, pkg_resources.get_distribution(package_name).location
+                replacement, pkg_resources.get_distribution(package_name).location,
             )
         except pkg_resources.DistributionNotFound:
             msg = "Invalid package `{0}`! as provided in {1}".format(

@@ -78,7 +78,6 @@ class ElasticsearchEngine(Engine):
         source_filters = []
         for el_path in query.get_select():
             if el_path.star:
-                source_filters.append(field_index_name)
                 break
             if el_path.non_fhir is True:
                 # No replacer for Non Fhir Path
@@ -171,6 +170,7 @@ class ElasticsearchEngine(Engine):
         }
 
         compiled = self.dialect.compile(**params)
+        print("DEBUG", self.get_index_name(), compiled)
         if query_type == EngineQueryType.DML:
             raw_result = self.connection.fetch(self.get_index_name(), compiled)
         elif query_type == EngineQueryType.COUNT:
@@ -191,6 +191,8 @@ class ElasticsearchEngine(Engine):
             source_filters = self._get_source_filters(query, field_index_name)
 
         # xxx: process result
+        print("source filters", source_filters)
+        print("result", raw_result)
         result = self.process_raw_result(raw_result, source_filters)
 
         # Process additional meta
@@ -208,17 +210,22 @@ class ElasticsearchEngine(Engine):
 
     def extract_hits(self, selects, hits, container, doc_type="_doc"):
         """ """
+        print("extract")
         for res in hits:
             if res["_type"] != doc_type:
                 continue
             row = EngineResultRow()
-            for fullpath in selects:
-                source = res["_source"]
-                for path_ in fullpath.split("."):
-                    source = self._traverse_for_value(source, path_)
-                    if source is None:
-                        break
-                row.append(source)
+            if len(selects) == 0:
+                row.append(res["_source"])
+            else:
+                for fullpath in selects:
+                    source = res["_source"]
+                    for path_ in fullpath.split("."):
+                        source = self._traverse_for_value(source, path_)
+                        if source is None:
+                            break
+                    row.append(source)
+            print("add row", row)
             container.add(row)
 
     def process_raw_result(self, rawresult, selects):
@@ -235,9 +242,6 @@ class ElasticsearchEngine(Engine):
         result = EngineResult(
             header=EngineResultHeader(total=total), body=EngineResultBody()
         )
-        if len(selects) == 0:
-            # Nothing would be in body
-            return result
         # extract primary data
         self.extract_hits(selects, rawresult["hits"]["hits"], result.body)
 
@@ -271,6 +275,6 @@ class ElasticsearchEngine(Engine):
     def wrapped_with_bundle(self, result):
         """ """
         url = self.current_url()
-
+        print("wrap", result.body)
         wrapper = BundleWrapper(self, result, url, "searchset")
         return wrapper()

@@ -36,7 +36,17 @@ __author__ = "Md Nazrul Islam <email2nazrul@gmail.com>"
 
 escape_comma_replacer: Text = "_ESCAPE_COMMA_"
 uri_scheme: Pattern = re.compile(r"^https?://", re.I)
-value_prefixes: Set[str] = {"eq", "ne", "gt", "lt", "ge", "le", "sa", "eb", "ap"}
+value_prefixes: Set[str] = {
+    "eq",
+    "ne",
+    "gt",
+    "lt",
+    "ge",
+    "le",
+    "sa",
+    "eb",
+    "ap",
+}
 has_dot_as: Pattern = re.compile(r"\.as\([a-z]+\)$", re.I ^ re.U)
 has_dot_is: Pattern = re.compile(r"\.is\([a-z]+\)$", re.I ^ re.U)
 has_dot_where: Pattern = re.compile(r"\.where\([a-z\=\'\"()]+\)", re.I ^ re.U)
@@ -1069,7 +1079,6 @@ class Search(object):
     def resolve_path_context(self, param_name):
         """ """
         search_param = self._get_search_param_definition(param_name)
-
         if search_param.expression is None:
             raise NotImplementedError
 
@@ -1077,9 +1086,10 @@ class Search(object):
         if search_param.type == "composite":
             raise NotImplementedError
 
-        if search_param.type in ("token", "composite") and search_param.code.startswith(
-            "combo-"
-        ):
+        if search_param.type in (
+            "token",
+            "composite",
+        ) and search_param.code.startswith("combo-"):
             raise NotImplementedError
 
         dotted_path = search_param.expression
@@ -1163,11 +1173,14 @@ class Search(object):
         if len(part1_param_value) == 1:
             part1_param_value = part1_param_value[0]
         composite_bucket.append(
-            (self._dotted_path_to_path_context(part1[0]), part1_param_value, modifier)
+            (self._dotted_path_to_path_context(part1[0]), part1_param_value, modifier,)
         )
         part2 = list()
         for expr in param_def.component[1]["expression"].split("|"):
-            part_ = [".".join([param_def.expression, expr.strip()]), value_parts[1]]
+            part_ = [
+                ".".join([param_def.expression, expr.strip()]),
+                value_parts[1],
+            ]
             part2.append(part_)
         part2_param_value = list()
         self.normalize_param_value(part2[0][1], part2_param_value)
@@ -1177,7 +1190,7 @@ class Search(object):
         part2_temp = list()
         for pr in part2:
             part2_temp.append(
-                (self._dotted_path_to_path_context(pr[0]), part2_param_value, modifier)
+                (self._dotted_path_to_path_context(pr[0]), part2_param_value, modifier,)
             )
         if len(part2_temp) == 1:
             part2_temp = part2_temp[0]

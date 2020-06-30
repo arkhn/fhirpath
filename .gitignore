@@ -109,3 +109,4 @@ ENV/
 
 # files
 /src/fhirpath/version.py
+src/fhirpath/fhirspec/R4/

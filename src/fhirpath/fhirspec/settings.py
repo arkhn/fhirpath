@@ -40,7 +40,14 @@ RESERVED_MAP = {
 
 # enum_map
 # For enum codes where a computer just cannot generate reasonable names
-ENUM_MAP = {"=": "eq", "<": "lt", "<=": "lte", ">": "gt", ">=": "gte", "*": "max"}
+ENUM_MAP = {
+    "=": "eq",
+    "<": "lt",
+    "<=": "lte",
+    ">": "gt",
+    ">=": "gte",
+    "*": "max",
+}
 
 # enum_namemap
 # If you want to give specific names to enums based on their URI
@@ -105,7 +112,10 @@ MANUAL_PROFILES = [
     ("templates/fhirtypes.py", "fhirtypes", FHIR_PRIMITIVES),
 ]
 FHIR_VALUESETS_FILE_NAME = "valuesets.min.json"
-FHIR_PROFILES_FILE_NAMES = ["profiles-resources.min.json", "profiles-types.min.json"]
+FHIR_PROFILES_FILE_NAMES = [
+    "profiles-resources.min.json",
+    "profiles-types.min.json",
+]
 CAMELCASE_CLASSES = True
 CAMELCASE_ENUMS = True
 BACKBONE_CLASS_ADDS_PARENT = True

@@ -78,7 +78,9 @@ class FhirBoolean(FhirPrimitiveType):
         """ """
         res = re.match(self.__regex__, self)
         if not res:
-            raise ValueError("Invalid FHIR boolean value! should true or false")
+            raise ValueError(
+                "Invalid FHIR boolean value! should true or false", str(self)
+            )
 
     def to_python(self) -> bool:
         """ """
@@ -572,7 +574,7 @@ class PrimitiveTypeCollection(object):
             self._container.insert(position, member)
 
     def remove(
-        self, item: Optional[FhirPrimitiveType] = None, position: Optional[int] = None
+        self, item: Optional[FhirPrimitiveType] = None, position: Optional[int] = None,
     ):
         """ """
         if item is None:
