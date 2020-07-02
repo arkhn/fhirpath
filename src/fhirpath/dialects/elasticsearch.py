@@ -42,12 +42,7 @@ def escape_star(v):
 def escape_all(v):
     """ """
     v = escape_star(v)
-    v = (
-        v.replace(".", "\\.")
-        .replace("?", "\\?")
-        .replace(":", "\\:")
-        .replace("[", "\\[")
-    )
+    v = v.replace(".", "\\.").replace("?", "\\?").replace(":", "\\:").replace("[", "\\[")
     return v
 
 
@@ -57,9 +52,6 @@ class ElasticSearchDialect(DialectBase):
     @staticmethod
     def apply_nested(query, dotted_path):
         """ """
-        # FIXME
-        dotted_path = dotted_path.split(".", 1)[1]
-
         wrapper = {
             "nested": {
                 "path": dotted_path,
@@ -177,6 +169,8 @@ class ElasticSearchDialect(DialectBase):
             path_ = ".".join([root_replacer] + list(term.path.path.split(".")[1:]))
         else:
             path_ = term.path.path
+
+        print("create dotted path", path_)
         return path_
 
     @staticmethod
@@ -250,9 +244,7 @@ class ElasticSearchDialect(DialectBase):
 
                 frameinfo = getframeinfo(currentframe())
                 raise NotImplementedError(
-                    "File: {0} Line: {1}".format(
-                        frameinfo.filename, frameinfo.lineno + 1
-                    )
+                    "File: {0} Line: {1}".format(frameinfo.filename, frameinfo.lineno + 1)
                 )
 
             container.append(q)
@@ -268,9 +260,7 @@ class ElasticSearchDialect(DialectBase):
         # Limit
         ElasticSearchDialect.apply_limit(query.get_limit(), body_structure)
         # ES source_
-        ElasticSearchDialect.apply_source_filter(
-            query, body_structure, root_replacer=root_replacer
-        )
+        ElasticSearchDialect.apply_source_filter(query, body_structure, root_replacer=root_replacer)
 
         ElasticSearchDialect.clean_up(body_structure)
 
@@ -340,9 +330,7 @@ class ElasticSearchDialect(DialectBase):
             return qr, unary_operator
 
         elif IExistsTerm.providedBy(term):
-            return ElasticSearchDialect.resolve_exists_term(
-                term, root_replacer=root_replacer
-            )
+            return ElasticSearchDialect.resolve_exists_term(term, root_replacer=root_replacer)
 
         elif ITerm.providedBy(term):
 
@@ -361,14 +349,10 @@ class ElasticSearchDialect(DialectBase):
                 ):
                     # xxx: may do something special?
                     multiple = term.path.context.multiple
-                    dotted_path = ElasticSearchDialect.create_dotted_path(
-                        term, root_replacer
-                    )
+                    dotted_path = ElasticSearchDialect.create_dotted_path(term, root_replacer)
                     value = term.get_real_value()
 
-                    map_info = ElasticSearchDialect.get_path_mapping_info(
-                        mapping, dotted_path
-                    )
+                    map_info = ElasticSearchDialect.get_path_mapping_info(mapping, dotted_path)
 
                     if map_info.get("type", None) == "text":
                         resolved = ElasticSearchDialect.resolve_string_term(
@@ -381,21 +365,14 @@ class ElasticSearchDialect(DialectBase):
                         elif term.comparison_operator == OPERATOR.eb:
                             q = ElasticSearchDialect.create_eb_term(dotted_path, value)
                         elif term.comparison_operator == OPERATOR.contains:
-                            q = ElasticSearchDialect.create_contains_term(
-                                dotted_path, value
-                            )
+                            q = ElasticSearchDialect.create_contains_term(dotted_path, value)
                         else:
                             q = ElasticSearchDialect.create_term(
                                 dotted_path, value, multiple=multiple
                             )
                         resolved = q, term.unary_operator
 
-                elif term.path.context.type_name in (
-                    "dateTime",
-                    "date",
-                    "time",
-                    "instant",
-                ):
+                elif term.path.context.type_name in ("dateTime", "date", "time", "instant",):
 
                     resolved = self.resolve_datetime_term(term, root_replacer)
 
@@ -406,9 +383,7 @@ class ElasticSearchDialect(DialectBase):
                     "positiveInt",
                 ):
 
-                    resolved = ElasticSearchDialect.resolve_numeric_term(
-                        term, root_replacer
-                    )
+                    resolved = ElasticSearchDialect.resolve_numeric_term(term, root_replacer)
                 else:
                     raise NotImplementedError
 
@@ -441,9 +416,7 @@ class ElasticSearchDialect(DialectBase):
         path_ = ElasticSearchDialect.create_dotted_path(term, root_replacer)
 
         if type_name in ("dateTime", "instant"):
-            value_formatter = (
-                isodate.DATE_EXT_COMPLETE + "T" + isodate.TIME_EXT_COMPLETE
-            )
+            value_formatter = isodate.DATE_EXT_COMPLETE + "T" + isodate.TIME_EXT_COMPLETE
         elif type_name == "date":
             value_formatter = isodate.DATE_EXT_COMPLETE
         elif type_name == "time":
@@ -454,21 +427,12 @@ class ElasticSearchDialect(DialectBase):
         if term.comparison_operator in (OPERATOR.eq, OPERATOR.ne):
             qr["range"] = {
                 path_: {
-                    ES_PY_OPERATOR_MAP[OPERATOR.ge]: isodate.strftime(
-                        value, value_formatter
-                    ),
-                    ES_PY_OPERATOR_MAP[OPERATOR.le]: isodate.strftime(
-                        value, value_formatter
-                    ),
+                    ES_PY_OPERATOR_MAP[OPERATOR.ge]: isodate.strftime(value, value_formatter),
+                    ES_PY_OPERATOR_MAP[OPERATOR.le]: isodate.strftime(value, value_formatter),
                 }
             }
 
-        elif term.comparison_operator in (
-            OPERATOR.le,
-            OPERATOR.lt,
-            OPERATOR.ge,
-            OPERATOR.gt,
-        ):
+        elif term.comparison_operator in (OPERATOR.le, OPERATOR.lt, OPERATOR.ge, OPERATOR.gt,):
             qr["range"] = {
                 path_: {
                     ES_PY_OPERATOR_MAP[term.comparison_operator]: isodate.strftime(
@@ -482,12 +446,8 @@ class ElasticSearchDialect(DialectBase):
             if timezone not in ("", "Z"):
                 qr["range"][path_]["time_zone"] = timezone
 
-        if (
-            term.comparison_operator != OPERATOR.ne
-            and term.unary_operator == OPERATOR.neg
-        ) or (
-            term.comparison_operator == OPERATOR.ne
-            and term.unary_operator != OPERATOR.neg
+        if (term.comparison_operator != OPERATOR.ne and term.unary_operator == OPERATOR.neg) or (
+            term.comparison_operator == OPERATOR.ne and term.unary_operator != OPERATOR.neg
         ):
             unary_operator = OPERATOR.neg
         else:
@@ -510,20 +470,11 @@ class ElasticSearchDialect(DialectBase):
                 }
             }
 
-        elif term.comparison_operator in (
-            OPERATOR.le,
-            OPERATOR.lt,
-            OPERATOR.ge,
-            OPERATOR.gt,
-        ):
+        elif term.comparison_operator in (OPERATOR.le, OPERATOR.lt, OPERATOR.ge, OPERATOR.gt,):
             qr["range"] = {path_: {ES_PY_OPERATOR_MAP[term.comparison_operator]: value}}
 
-        if (
-            term.comparison_operator != OPERATOR.ne
-            and term.unary_operator == OPERATOR.neg
-        ) or (
-            term.comparison_operator == OPERATOR.ne
-            and term.unary_operator != OPERATOR.neg
+        if (term.comparison_operator != OPERATOR.ne and term.unary_operator == OPERATOR.neg) or (
+            term.comparison_operator == OPERATOR.ne and term.unary_operator != OPERATOR.neg
         ):
             unary_operator = OPERATOR.neg
         else:
@@ -547,10 +498,7 @@ class ElasticSearchDialect(DialectBase):
                 qr = {"match_phrase_prefix": {path_: value}}
             elif term.comparison_operator == OPERATOR.eb:
                 qr = {
-                    "query_string": {
-                        "fields": [path_],
-                        "query": "*{0}".format(escape_star(value)),
-                    }
+                    "query_string": {"fields": [path_], "query": "*{0}".format(escape_star(value)),}
                 }
             elif term.comparison_operator == OPERATOR.contains:
                 qr = {
@@ -563,9 +511,7 @@ class ElasticSearchDialect(DialectBase):
                 qr = {"match": {path_: {"query": value, "fuzziness": "AUTO"}}}
 
         else:
-            qr = ElasticSearchDialect.create_term(
-                path_, value, term.path.context.multiple
-            )
+            qr = ElasticSearchDialect.create_term(path_, value, term.path.context.multiple)
 
         resolved = qr, term.unary_operator
         return resolved
@@ -577,9 +523,7 @@ class ElasticSearchDialect(DialectBase):
 
         qr = {"exists": {"field": path_}}
         if not INonFhirTerm.providedBy(term):
-            qr = ElasticSearchDialect.attach_nested_on_demand(
-                term.path.context, qr, root_replacer
-            )
+            qr = ElasticSearchDialect.attach_nested_on_demand(term.path.context, qr, root_replacer)
 
         return qr, term.unary_operator
 
@@ -588,13 +532,9 @@ class ElasticSearchDialect(DialectBase):
         if IPrimitiveTypeCollection.providedBy(term.value):
             visit_name = term.value.registered_visit
             if visit_name in ("string", "code", "oid", "id", "uuid"):
-                if visit_name == "string" and term.match_type not in (
-                    None,
-                    TermMatchType.EXACT,
-                ):
+                if visit_name == "string" and term.match_type not in (None, TermMatchType.EXACT,):
                     raise ValueError(
-                        "PrimitiveTypeCollection instance is not "
-                        "allowed if match type not exact"
+                        "PrimitiveTypeCollection instance is not " "allowed if match type not exact"
                     )
             else:
                 raise NotImplementedError
@@ -718,12 +658,7 @@ class ElasticSearchDialect(DialectBase):
         """ """
         return {
             "query": {
-                "bool": {
-                    "should": list(),
-                    "must": list(),
-                    "must_not": list(),
-                    "filter": list(),
-                }
+                "bool": {"should": list(), "must": list(), "must_not": list(), "filter": list(),}
             },
             "size": 100,
             "from": 0,

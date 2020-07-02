@@ -360,12 +360,7 @@ class Term(BaseTerm):
                 "time",
                 "unsignedInt",
                 "positiveInt",
-            ) and self.comparison_operator in (
-                OPERATOR.lt,
-                OPERATOR.le,
-                OPERATOR.gt,
-                OPERATOR.ge,
-            ):
+            ) and self.comparison_operator in (OPERATOR.lt, OPERATOR.le, OPERATOR.gt, OPERATOR.ge,):
                 raise ValidationError(
                     "Operator '{0!s}' is allowed for value type '{1!s}'".format(
                         self.comparison_operator.__name__, self.path.context.type_name,
@@ -469,12 +464,7 @@ class NonFhirTerm(BaseTerm):
             "time",
             "unsignedInt",
             "positiveInt",
-        ) and self.comparison_operator in (
-            OPERATOR.lt,
-            OPERATOR.le,
-            OPERATOR.gt,
-            OPERATOR.ge,
-        ):
+        ) and self.comparison_operator in (OPERATOR.lt, OPERATOR.le, OPERATOR.gt, OPERATOR.ge,):
             raise ValidationError(
                 "Operator '{0!s}' is allowed for value type '{1!s}'".format(
                     self.comparison_operator.__name__, self.value.__name__
@@ -1023,9 +1013,7 @@ class ElementPath(object):
             ctx = EmptyPathInfoContext()
             ctx._path = self._raw
         else:
-            ctx = proxy(
-                PathInfoContext.context_from_path(self._path, context.fhir_release)
-            )
+            ctx = proxy(PathInfoContext.context_from_path(self._path, context.fhir_release))
         self.context = ctx
         self._finalized = True
 

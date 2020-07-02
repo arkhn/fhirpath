@@ -610,6 +610,31 @@ class BundleWrapper:
 
         self.data["link"] = container
 
+    def attach_error(self, severity, code, details=None):
+        if not self.bundle.entry:
+            self.bundle.entry = list()
+
+        operationOutcome = lookup_fhir_class(
+            "OperationOutcome", fhir_release=self.fhir_version
+        )({"id": str(uuid.uuid4()), "issue": [{"severity": severity, "code": code}]})
+        if details:
+            operationOutcome.issue[0].details = lookup_fhir_class(
+                "CodeableConcept", fhir_release=self.fhir_version
+            )({"text": details})
+
+        item = lookup_fhir_class("BundleEntry", fhir_release=self.fhir_version)()
+        item.fullUrl = "{0}/{1}".format(
+            operationOutcome.resource_type, operationOutcome.id
+        )
+        item.resource = operationOutcome
+
+        item.search = lookup_fhir_class(
+            "BundleEntrySearch", fhir_release=self.fhir_version
+        )()
+        item.search.mode = "outcome"
+
+        self.bundle.entry.append(item)
+
     def make_link(self, relation, url, params=None):
         """ """
         params = params or {}

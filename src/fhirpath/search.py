@@ -1,4 +1,5 @@
 # _*_ coding: utf-8 _*_
+import uuid
 import logging
 import re
 from typing import Dict, Pattern, Set, Text
@@ -31,6 +32,7 @@ from fhirpath.fql.types import ElementPath
 from fhirpath.interfaces import IGroupTerm, ISearch, ISearchContext
 from fhirpath.query import Q_
 from fhirpath.storage import SEARCH_PARAMETERS_STORAGE
+from fhirpath.utils import lookup_fhir_class
 
 __author__ = "Md Nazrul Islam <email2nazrul@gmail.com>"
 
@@ -1149,7 +1151,7 @@ class Search(object):
 
         path_ = ElementPath.from_el_path(dotted_path)
         path_.finalize(self.context.engine)
-
+        print("path in context", path_)
         return path_
 
     def _normalize_composite_param(self, raw_value, param_def, modifier):
