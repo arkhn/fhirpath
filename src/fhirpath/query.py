@@ -409,7 +409,9 @@ class QueryResult(ABC):
         result = self._engine.execute(
             self._query, self._unrestricted, EngineQueryType.COUNT
         )
-        return result.header.total
+        # return result.header.total
+        print("res", result)
+        return result
 
     def empty(self):
         """Returns true if the input collection is empty ({ }) and false otherwise."""

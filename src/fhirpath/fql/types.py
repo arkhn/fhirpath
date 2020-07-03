@@ -892,6 +892,7 @@ class ElementPath(object):
     def __init__(self, dotted_path: str, non_fhir: bool = False):
         """ """
         self.context = None
+        self.resource_type = None
 
         self._finalized = False
         self._path = None
@@ -948,6 +949,8 @@ class ElementPath(object):
         if self.star:
             self._path = self._raw
             return
+
+        print("PARSE :: ", self._raw)
         # xxx: more things soon
         if has_dot_as.search(self._raw):
             match = has_dot_as.search(self._raw)
@@ -983,6 +986,8 @@ class ElementPath(object):
 
         else:
             self._path = self._raw
+            # self._path = self._raw.split(".", 1)[1]
+            self.resource_type = self._raw.split(".", 1)[0]
 
     @property
     def path(self):

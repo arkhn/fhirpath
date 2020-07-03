@@ -109,19 +109,16 @@ class Search(object):
         """ """
         if not ISearchContext.providedBy(context):
             raise ValidationError(
-                ":context must be implemented "
-                "fhirpath.interfaces.ISearchContext interface"
+                ":context must be implemented " "fhirpath.interfaces.ISearchContext interface"
             )
 
         if query_string is None and params is None:
             raise ValidationError(
-                "At least one of value is required, "
-                "either ´query_string´ or search ´params´ "
+                "At least one of value is required, " "either ´query_string´ or search ´params´ "
             )
         if query_string and params:
             raise ValidationError(
-                "Only value from one of arguments "
-                "(´query_string´, ´params´) is accepted"
+                "Only value from one of arguments " "(´query_string´, ´params´) is accepted"
             )
 
     def prepare_params(self, all_params):
@@ -174,9 +171,10 @@ class Search(object):
         if _revinclude:
             self.result_params["_revinclude"] = _revinclude
 
-        _elements = all_params.popone("_elements", [])
-        if len(_elements) > 0:
-            self.result_params["_elements"] = ",".join(_elements)
+        _elements = all_params.popone("_elements", None)
+        if _elements:
+            # self.result_params["_elements"] = ",".join(_elements)
+            self.result_params["_elements"] = _elements.split(",")
 
         _contained = all_params.popone("_contained", None)
         if _contained:
@@ -247,13 +245,12 @@ class Search(object):
             for nd in normalized_data:
                 self.add_term(nd, terms_container)
 
-        factory = self.attach_limit_terms(
-            self.attach_sort_terms(builder.where(*terms_container))
-        )
+        builder = self.attach_select_terms(builder.where(*terms_container))
+        builder = self.attach_sort_terms(builder)
+        builder = self.attach_limit_terms(builder)
 
-        result = factory(
-            unrestricted=self.context.unrestricted,
-            async_result=self.context.async_result,
+        result = builder(
+            unrestricted=self.context.unrestricted, async_result=self.context.async_result,
         )
         return result
 
@@ -492,9 +489,7 @@ class Search(object):
 
         raise NotImplementedError
 
-    def single_valued_coding_term(
-        self, path_, value, modifier, ignore_not_modifier=False
-    ):
+    def single_valued_coding_term(self, path_, value, modifier, ignore_not_modifier=False):
         """ """
         operator_, original_value = value
 
@@ -688,9 +683,7 @@ class Search(object):
             assert path_._where.name == "system"
 
             terms = [
-                self.create_term(
-                    path_ / "system", (value[0], path_._where.value), None
-                ),
+                self.create_term(path_ / "system", (value[0], path_._where.value), None),
                 self.create_term(path_ / "value", value, None),
             ]
         else:
@@ -899,9 +892,7 @@ class Search(object):
                 "You cannot use modifier (above,below) and prefix (sa,eb) at a time"
             )
         if modifier == "contains" and operator_ != "eq":
-            raise NotImplementedError(
-                "In case of :contains modifier, only eq prefix is supported"
-            )
+            raise NotImplementedError("In case of :contains modifier, only eq prefix is supported")
 
     def create_term(self, path_, value, modifier):
         """ """
@@ -1067,15 +1058,12 @@ class Search(object):
         """
         if modifier in ("missing", "exists"):
             if not isinstance(param_value, tuple):
-                raise ValidationError(
-                    "Multiple values are not allowed for missing(exists) search"
-                )
+                raise ValidationError("Multiple values are not allowed for missing(exists) search")
 
             if not param_value[1] in ("true", "false"):
 
                 raise ValidationError(
-                    "Only ´true´ or ´false´ as value is "
-                    "allowed for missing(exists) search"
+                    "Only ´true´ or ´false´ as value is " "allowed for missing(exists) search"
                 )
 
     def resolve_path_context(self, param_name):
@@ -1088,10 +1076,7 @@ class Search(object):
         if search_param.type == "composite":
             raise NotImplementedError
 
-        if search_param.type in (
-            "token",
-            "composite",
-        ) and search_param.code.startswith("combo-"):
+        if search_param.type in ("token", "composite",) and search_param.code.startswith("combo-"):
             raise NotImplementedError
 
         dotted_path = search_param.expression
@@ -1130,6 +1115,14 @@ class Search(object):
                 offset = (current_page - 1) * self.result_params["_count"]
         return builder.limit(self.result_params["_count"], offset)
 
+    def attach_select_terms(self, builder):
+        """ """
+        if "_elements" not in self.result_params:
+            return builder
+
+        paths = [f"{self.context.resource_name}.{el}" for el in self.result_params["_elements"]]
+        return builder.select(*paths)
+
     def response(self, result):
         """ """
         return self.context.engine.wrapped_with_bundle(result)
@@ -1158,8 +1151,7 @@ class Search(object):
         """ """
         if len(raw_value) < 1:
             raise NotImplementedError(
-                "Currently duplicate composite type "
-                "params are not allowed or supported"
+                "Currently duplicate composite type " "params are not allowed or supported"
             )
         value_parts = raw_value[0].split("&")
         assert len(value_parts) == 2
@@ -1204,7 +1196,11 @@ class Search(object):
     def __call__(self):
         """ """
         query_result = self.build()
-        result = query_result.fetchall()
+        if self.result_params.get("_summary") == "count":
+            result = query_result.count()
+        else:
+            result = query_result.fetchall()
+
         assert result is not None
         response = self.response(result)
 

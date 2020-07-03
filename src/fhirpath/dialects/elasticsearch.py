@@ -52,6 +52,10 @@ class ElasticSearchDialect(DialectBase):
     @staticmethod
     def apply_nested(query, dotted_path):
         """ """
+
+        # FIXME: remove resource_type from path eg (Observation.active => active)
+        dotted_path = dotted_path.split(".", 1)[1]
+
         wrapper = {
             "nested": {
                 "path": dotted_path,
@@ -109,6 +113,9 @@ class ElasticSearchDialect(DialectBase):
     @staticmethod
     def create_sa_term(path, value):
         """Create ES Prefix Query"""
+        # FIXME: remove resource_type from path eg (Observation.active => active)
+        path = path.split(".", 1)[1]
+
         if isinstance(value, (list, tuple)):
             if len(value) == 1:
                 value = value[0]
@@ -125,6 +132,8 @@ class ElasticSearchDialect(DialectBase):
     @staticmethod
     def create_contains_term(path, value):
         """Create ES Regex Query"""
+        # FIXME: remove resource_type from path eg (Observation.active => active)
+        path = path.split(".", 1)[1]
 
         if isinstance(value, (list, tuple)):
             if len(value) == 1:
@@ -144,6 +153,9 @@ class ElasticSearchDialect(DialectBase):
     @staticmethod
     def create_eb_term(path, value):
         """Create ES Prefix Query"""
+        # FIXME: remove resource_type from path eg (Observation.active => active)
+        path = path.split(".", 1)[1]
+
         if isinstance(value, (list, tuple)):
             if len(value) == 1:
                 value = value[0]
@@ -170,7 +182,6 @@ class ElasticSearchDialect(DialectBase):
         else:
             path_ = term.path.path
 
-        print("create dotted path", path_)
         return path_
 
     @staticmethod
@@ -631,8 +642,11 @@ class ElasticSearchDialect(DialectBase):
             return
 
         def replace(path_el):
-            if root_replacer is None or path_el.non_fhir:
+            if path_el.non_fhir:
                 return path_el.path
+            elif root_replacer is None:
+                return path_el.path.split(".", 1)[1]
+
             parts = path_el.path.split(".")
             if len(parts) > 1:
                 return ".".join([root_replacer] + list(parts[1:]))
@@ -641,12 +655,10 @@ class ElasticSearchDialect(DialectBase):
 
         includes = list()
         if len(query.get_select()) == 1 and query.get_select()[0].star:
+            # FIXME root_replacer ?
             includes.append("*")
-            # if root_replacer is None:
-            #     includes.append(query.get_from()[0][0])
-            # else:
-            #     includes.append(root_replacer)
         elif len(query.get_select()) > 0:
+            includes.append("resourceType")
             for path_el in query.get_select():
                 includes.append(replace(path_el))
 

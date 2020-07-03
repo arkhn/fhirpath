@@ -294,7 +294,6 @@ class EmptyPathInfoContext:
         self._parent = None
         self._children = None
         self._path = "*"
-
         self.fhir_release = None
         self.prop_name = None
         self.prop_original = None
