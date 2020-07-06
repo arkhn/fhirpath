@@ -574,7 +574,7 @@ class PrimitiveTypeCollection(object):
             self._container.insert(position, member)
 
     def remove(
-        self, item: Optional[FhirPrimitiveType] = None, position: Optional[int] = None,
+        self, item: Optional[FhirPrimitiveType] = None, position: Optional[int] = None
     ):
         """ """
         if item is None:

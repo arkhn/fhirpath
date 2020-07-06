@@ -29,7 +29,7 @@ class FHIRSearchSpec(object):
     """
 
     def __init__(
-        self, source: pathlib.Path, fhir_release: FHIR_VERSION, storage: MemoryStorage,
+        self, source: pathlib.Path, fhir_release: FHIR_VERSION, storage: MemoryStorage
     ):
         """ """
         self._finalized = False
@@ -59,7 +59,7 @@ class FHIRSearchSpec(object):
             for resource_type in param_def.expression_map:
                 if not storage.exists(resource_type):
                     storage.insert(
-                        resource_type, ResourceSearchParameterDefinition(resource_type),
+                        resource_type, ResourceSearchParameterDefinition(resource_type)
                     )
                 obj = storage.get(resource_type)
                 # add search param code to obj

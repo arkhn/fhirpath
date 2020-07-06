@@ -1,5 +1,4 @@
 # _*_ coding: utf-8 _*_
-import uuid
 import logging
 import re
 from typing import Dict, Pattern, Set, Text
@@ -109,16 +108,19 @@ class Search(object):
         """ """
         if not ISearchContext.providedBy(context):
             raise ValidationError(
-                ":context must be implemented " "fhirpath.interfaces.ISearchContext interface"
+                ":context must be implemented "
+                "fhirpath.interfaces.ISearchContext interface"
             )
 
         if query_string is None and params is None:
             raise ValidationError(
-                "At least one of value is required, " "either ´query_string´ or search ´params´ "
+                "At least one of value is required, "
+                "either ´query_string´ or search ´params´ "
             )
         if query_string and params:
             raise ValidationError(
-                "Only value from one of arguments " "(´query_string´, ´params´) is accepted"
+                "Only value from one of arguments "
+                "(´query_string´, ´params´) is accepted"
             )
 
     def prepare_params(self, all_params):
@@ -173,7 +175,6 @@ class Search(object):
 
         _elements = all_params.popone("_elements", None)
         if _elements:
-            # self.result_params["_elements"] = ",".join(_elements)
             self.result_params["_elements"] = _elements.split(",")
 
         _contained = all_params.popone("_contained", None)
@@ -250,7 +251,8 @@ class Search(object):
         builder = self.attach_limit_terms(builder)
 
         result = builder(
-            unrestricted=self.context.unrestricted, async_result=self.context.async_result,
+            unrestricted=self.context.unrestricted,
+            async_result=self.context.async_result,
         )
         return result
 
@@ -489,7 +491,9 @@ class Search(object):
 
         raise NotImplementedError
 
-    def single_valued_coding_term(self, path_, value, modifier, ignore_not_modifier=False):
+    def single_valued_coding_term(
+        self, path_, value, modifier, ignore_not_modifier=False
+    ):
         """ """
         operator_, original_value = value
 
@@ -683,7 +687,9 @@ class Search(object):
             assert path_._where.name == "system"
 
             terms = [
-                self.create_term(path_ / "system", (value[0], path_._where.value), None),
+                self.create_term(
+                    path_ / "system", (value[0], path_._where.value), None
+                ),
                 self.create_term(path_ / "value", value, None),
             ]
         else:
@@ -892,7 +898,9 @@ class Search(object):
                 "You cannot use modifier (above,below) and prefix (sa,eb) at a time"
             )
         if modifier == "contains" and operator_ != "eq":
-            raise NotImplementedError("In case of :contains modifier, only eq prefix is supported")
+            raise NotImplementedError(
+                "In case of :contains modifier, only eq prefix is supported"
+            )
 
     def create_term(self, path_, value, modifier):
         """ """
@@ -1058,12 +1066,15 @@ class Search(object):
         """
         if modifier in ("missing", "exists"):
             if not isinstance(param_value, tuple):
-                raise ValidationError("Multiple values are not allowed for missing(exists) search")
+                raise ValidationError(
+                    "Multiple values are not allowed for missing(exists) search"
+                )
 
             if not param_value[1] in ("true", "false"):
 
                 raise ValidationError(
-                    "Only ´true´ or ´false´ as value is " "allowed for missing(exists) search"
+                    "Only ´true´ or ´false´ as value is "
+                    "allowed for missing(exists) search"
                 )
 
     def resolve_path_context(self, param_name):
@@ -1076,7 +1087,10 @@ class Search(object):
         if search_param.type == "composite":
             raise NotImplementedError
 
-        if search_param.type in ("token", "composite",) and search_param.code.startswith("combo-"):
+        if search_param.type in (
+            "token",
+            "composite",
+        ) and search_param.code.startswith("combo-"):
             raise NotImplementedError
 
         dotted_path = search_param.expression
@@ -1120,7 +1134,10 @@ class Search(object):
         if "_elements" not in self.result_params:
             return builder
 
-        paths = [f"{self.context.resource_name}.{el}" for el in self.result_params["_elements"]]
+        paths = [
+            f"{self.context.resource_name}.{el}"
+            for el in self.result_params["_elements"]
+        ]
         return builder.select(*paths)
 
     def response(self, result):
@@ -1144,14 +1161,14 @@ class Search(object):
 
         path_ = ElementPath.from_el_path(dotted_path)
         path_.finalize(self.context.engine)
-        print("path in context", path_)
         return path_
 
     def _normalize_composite_param(self, raw_value, param_def, modifier):
         """ """
         if len(raw_value) < 1:
             raise NotImplementedError(
-                "Currently duplicate composite type " "params are not allowed or supported"
+                "Currently duplicate composite type "
+                "params are not allowed or supported"
             )
         value_parts = raw_value[0].split("&")
         assert len(value_parts) == 2
@@ -1167,7 +1184,7 @@ class Search(object):
         if len(part1_param_value) == 1:
             part1_param_value = part1_param_value[0]
         composite_bucket.append(
-            (self._dotted_path_to_path_context(part1[0]), part1_param_value, modifier,)
+            (self._dotted_path_to_path_context(part1[0]), part1_param_value, modifier)
         )
         part2 = list()
         for expr in param_def.component[1]["expression"].split("|"):
@@ -1184,7 +1201,7 @@ class Search(object):
         part2_temp = list()
         for pr in part2:
             part2_temp.append(
-                (self._dotted_path_to_path_context(pr[0]), part2_param_value, modifier,)
+                (self._dotted_path_to_path_context(pr[0]), part2_param_value, modifier)
             )
         if len(part2_temp) == 1:
             part2_temp = part2_temp[0]

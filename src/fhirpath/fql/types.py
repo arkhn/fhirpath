@@ -360,10 +360,15 @@ class Term(BaseTerm):
                 "time",
                 "unsignedInt",
                 "positiveInt",
-            ) and self.comparison_operator in (OPERATOR.lt, OPERATOR.le, OPERATOR.gt, OPERATOR.ge,):
+            ) and self.comparison_operator in (
+                OPERATOR.lt,
+                OPERATOR.le,
+                OPERATOR.gt,
+                OPERATOR.ge,
+            ):
                 raise ValidationError(
                     "Operator '{0!s}' is allowed for value type '{1!s}'".format(
-                        self.comparison_operator.__name__, self.path.context.type_name,
+                        self.comparison_operator.__name__, self.path.context.type_name
                     )
                 )
         else:
@@ -464,7 +469,12 @@ class NonFhirTerm(BaseTerm):
             "time",
             "unsignedInt",
             "positiveInt",
-        ) and self.comparison_operator in (OPERATOR.lt, OPERATOR.le, OPERATOR.gt, OPERATOR.ge,):
+        ) and self.comparison_operator in (
+            OPERATOR.lt,
+            OPERATOR.le,
+            OPERATOR.gt,
+            OPERATOR.ge,
+        ):
             raise ValidationError(
                 "Operator '{0!s}' is allowed for value type '{1!s}'".format(
                     self.comparison_operator.__name__, self.value.__name__
@@ -892,7 +902,6 @@ class ElementPath(object):
     def __init__(self, dotted_path: str, non_fhir: bool = False):
         """ """
         self.context = None
-        self.resource_type = None
 
         self._finalized = False
         self._path = None
@@ -986,8 +995,9 @@ class ElementPath(object):
 
         else:
             self._path = self._raw
+            # FIXME
             # self._path = self._raw.split(".", 1)[1]
-            self.resource_type = self._raw.split(".", 1)[0]
+            # self.resource_type = self._raw.split(".", 1)[0]
 
     @property
     def path(self):
@@ -1018,7 +1028,9 @@ class ElementPath(object):
             ctx = EmptyPathInfoContext()
             ctx._path = self._raw
         else:
-            ctx = proxy(PathInfoContext.context_from_path(self._path, context.fhir_release))
+            ctx = proxy(
+                PathInfoContext.context_from_path(self._path, context.fhir_release)
+            )
         self.context = ctx
         self._finalized = True
 

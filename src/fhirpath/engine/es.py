@@ -50,7 +50,9 @@ class ElasticsearchEngine(Engine):
         """ """
         raise NotImplementedError
 
-    def _add_result_headers(self, query, result, source_filters, compiled, field_index_name):
+    def _add_result_headers(
+        self, query, result, source_filters, compiled, field_index_name
+    ):
         """ """
         # Process additional meta
         result.header.raw_query = self.connection.finalize_search_params(compiled)
@@ -58,32 +60,36 @@ class ElasticsearchEngine(Engine):
             return
 
         resource_type = query.get_from()[0][0]
-        # selects = list()
-        # for path_ in source_filters:
-        #     if not path_.startswith(field_index_name):
-        #         selects.append(path_)
-        #         continue
-        #     parts = path_.split(".")
-        #     if len(parts) == 1:
-        #         selects.append(resource_type)
-        #     else:
-        #         selects.append(".".join([resource_type] + parts[1:]))
+        selects = list()
+        for path_ in source_filters:
+            if not path_.startswith(field_index_name):
+                selects.append(path_)
+                continue
+            parts = path_.split(".")
+            if len(parts) == 1:
+                selects.append(resource_type)
+            else:
+                selects.append(".".join([resource_type] + parts[1:]))
 
-        result.header.selects = [f"{resource_type}.{f}" for f in source_filters]
+        # FIXME
+        # result.header.selects = [f"{resource_type}.{f}" for f in source_filters]
+        result.header.selects = selects
 
     def _get_source_filters(self, query, field_index_name):
         """ """
         source_filters = []
         for el_path in query.get_select():
             if el_path.star:
+                source_filters.append(field_index_name)
                 break
             if el_path.non_fhir is True:
                 # No replacer for Non Fhir Path
                 source_filters.append(el_path.path)
                 continue
-            # parts = el_path._raw.split(".")
-            # source_filters.append(".".join([field_index_name] + parts[1:]))
-            source_filters.append(el_path._raw.split(".", 1)[1])
+            parts = el_path._raw.split(".")
+            source_filters.append(".".join([field_index_name] + parts[1:]))
+            # FIXME
+            # source_filters.append(el_path._raw.split(".", 1)[1])
         return source_filters
 
     def _traverse_for_value(self, source, path_):
@@ -91,7 +97,9 @@ class ElasticsearchEngine(Engine):
         """
         if isinstance(source, dict):
             # xxx: validate path, not blindly sending None
-            if CONTAINS_INDEX_OR_FUNCTION.search(path_) and CONTAINS_FUNCTION.match(path_):
+            if CONTAINS_INDEX_OR_FUNCTION.search(path_) and CONTAINS_FUNCTION.match(
+                path_
+            ):
                 raise ValidationError(
                     f"Invalid path {path_} has been supllied!"
                     "Path cannot contain function if source type is dict"
@@ -178,7 +186,9 @@ class ElasticsearchEngine(Engine):
 
     def execute(self, query, unrestricted=False, query_type=EngineQueryType.DML):
         """ """
-        raw_result, field_index_name, compiled = self._execute(query, unrestricted, query_type)
+        raw_result, field_index_name, compiled = self._execute(
+            query, unrestricted, query_type
+        )
         if query_type == EngineQueryType.COUNT:
             source_filters = []
         else:
@@ -188,7 +198,9 @@ class ElasticsearchEngine(Engine):
         result = self.process_raw_result(raw_result, source_filters, query_type)
 
         # Process additional meta
-        self._add_result_headers(query, result, source_filters, compiled, field_index_name)
+        self._add_result_headers(
+            query, result, source_filters, compiled, field_index_name
+        )
         return result
 
     def build_security_query(self, query):
@@ -204,18 +216,18 @@ class ElasticsearchEngine(Engine):
             if res["_type"] != doc_type:
                 continue
             row = EngineResultRow()
+            # FIXME
             # if len(selects) == 0:
-            row.append(res["_source"])
+            # row.append(res["_source"])
             # else:
             #     entry = {}
-            #     for fullpath in selects:
-            #         source = res["_source"]
-            #         entry[select] = res["_source"][fullpath]
-            #         # for path_ in fullpath.split("."):
-            #         #     source = self._traverse_for_value(source, path_)
-            #         #     if source is None:
-            #         #         break
-            #     row.append(entry)
+            for fullpath in selects:
+                source = res["_source"]
+                for path_ in fullpath.split("."):
+                    source = self._traverse_for_value(source, path_)
+                    if source is None:
+                        break
+                row.append(source)
             container.add(row)
 
     def process_raw_result(self, rawresult, selects, query_type):
@@ -228,12 +240,16 @@ class ElasticsearchEngine(Engine):
         else:
             total = rawresult["hits"]["total"]
 
-        result = EngineResult(header=EngineResultHeader(total=total), body=EngineResultBody())
+        result = EngineResult(
+            header=EngineResultHeader(total=total), body=EngineResultBody()
+        )
         # extract primary data
         if query_type != EngineQueryType.COUNT:
             self.extract_hits(selects, rawresult["hits"]["hits"], result.body)
 
-        if "_scroll_id" in rawresult and result.header.total > len(rawresult["hits"]["hits"]):
+        if "_scroll_id" in rawresult and result.header.total > len(
+            rawresult["hits"]["hits"]
+        ):
             # we need to fetch all!
             consumed = len(rawresult["hits"]["hits"])
 
