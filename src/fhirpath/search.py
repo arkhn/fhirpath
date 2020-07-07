@@ -14,7 +14,7 @@ from fhirpath.enums import (
     SortOrderType,
     WhereConstraintType,
 )
-from fhirpath.exceptions import ValidationError
+from fhirpath.exceptions import ValidationError, NoResultFound
 from fhirpath.fql import (
     G_,
     T_,
@@ -31,7 +31,6 @@ from fhirpath.fql.types import ElementPath
 from fhirpath.interfaces import IGroupTerm, ISearch, ISearchContext
 from fhirpath.query import Q_
 from fhirpath.storage import SEARCH_PARAMETERS_STORAGE
-from fhirpath.utils import lookup_fhir_class
 
 __author__ = "Md Nazrul Islam <email2nazrul@gmail.com>"
 
@@ -1143,6 +1142,9 @@ class Search(object):
 
     def response(self, result):
         """ """
+        if result.header.total == 0:
+            raise NoResultFound
+
         return self.context.engine.wrapped_with_bundle(result)
 
     def _get_search_param_definition(self, param_name):

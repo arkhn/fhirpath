@@ -280,8 +280,4 @@ class ElasticsearchEngine(Engine):
         """ """
         url = self.current_url()
         wrapper = BundleWrapper(self, result, url, "searchset")
-        if wrapper.bundle.total == 0:
-            wrapper.attach_error(
-                "warning", "not-found", details="No resource matching search criterias"
-            )
         return wrapper()

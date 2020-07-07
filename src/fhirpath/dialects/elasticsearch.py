@@ -703,9 +703,6 @@ class ElasticSearchDialect(DialectBase):
         def replace(path_el):
             if root_replacer is None or path_el.non_fhir:
                 return path_el.path
-            # FIXME
-            # elif root_replacer is None:
-            #     return path_el.path.split(".", 1)[1]
 
             parts = path_el.path.split(".")
             if len(parts) > 1:
