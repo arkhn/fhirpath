@@ -995,9 +995,6 @@ class ElementPath(object):
 
         else:
             self._path = self._raw
-            # FIXME
-            # self._path = self._raw.split(".", 1)[1]
-            # self.resource_type = self._raw.split(".", 1)[0]
 
     @property
     def path(self):

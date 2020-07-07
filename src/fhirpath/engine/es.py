@@ -89,7 +89,7 @@ class ElasticsearchEngine(Engine):
             parts = el_path._raw.split(".")
             source_filters.append(".".join([field_index_name] + parts[1:]))
             # FIXME
-            # source_filters.append(el_path._raw.split(".", 1)[1])
+
         return source_filters
 
     def _traverse_for_value(self, source, path_):
@@ -195,7 +195,9 @@ class ElasticsearchEngine(Engine):
             source_filters = self._get_source_filters(query, field_index_name)
 
         # xxx: process result
-        result = self.process_raw_result(raw_result, source_filters, query_type)
+        result = self.process_raw_result(
+            raw_result, source_filters, query_type, field_index_name
+        )
 
         # Process additional meta
         self._add_result_headers(
@@ -210,27 +212,25 @@ class ElasticsearchEngine(Engine):
     def calculate_field_index_name(self, resource_type):
         raise NotImplementedError
 
-    def extract_hits(self, selects, hits, container, doc_type="_doc"):
+    def extract_hits(self, selects, hits, container, field_index_name, doc_type="_doc"):
         """ """
         for res in hits:
             if res["_type"] != doc_type:
                 continue
             row = EngineResultRow()
+
             # FIXME
-            # if len(selects) == 0:
-            # row.append(res["_source"])
-            # else:
-            #     entry = {}
-            for fullpath in selects:
-                source = res["_source"]
-                for path_ in fullpath.split("."):
-                    source = self._traverse_for_value(source, path_)
-                    if source is None:
-                        break
-                row.append(source)
+            row.append(res["_source"][field_index_name])
+            # for fullpath in selects:
+            #     source = res["_source"]
+            #     for path_ in fullpath.split("."):
+            #         source = self._traverse_for_value(source, path_)
+            #         if source is None:
+            #             break
+            #     row.append(source)
             container.add(row)
 
-    def process_raw_result(self, rawresult, selects, query_type):
+    def process_raw_result(self, rawresult, selects, query_type, field_index_name):
         """ """
         if query_type == EngineQueryType.COUNT:
             total = rawresult["count"]
@@ -245,7 +245,9 @@ class ElasticsearchEngine(Engine):
         )
         # extract primary data
         if query_type != EngineQueryType.COUNT:
-            self.extract_hits(selects, rawresult["hits"]["hits"], result.body)
+            self.extract_hits(
+                selects, rawresult["hits"]["hits"], result.body, field_index_name
+            )
 
         if "_scroll_id" in rawresult and result.header.total > len(
             rawresult["hits"]["hits"]

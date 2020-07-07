@@ -719,11 +719,8 @@ class ElasticSearchDialect(DialectBase):
                 includes.append(query.get_from()[0][0])
             else:
                 includes.append(root_replacer)
-            # FIXME root_replacer ?
-            # includes.append("*")
         elif len(query.get_select()) > 0:
-            # FIXME
-            includes.append("resourceType")
+            includes.append(f"{root_replacer}.resourceType")
             for path_el in query.get_select():
                 includes.append(replace(path_el))
 
