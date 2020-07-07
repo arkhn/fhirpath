@@ -52,6 +52,7 @@ has_dot_as: Pattern = re.compile(r"\.as\([a-z]+\)$", re.I ^ re.U)
 has_dot_is: Pattern = re.compile(r"\.is\([a-z]+\)$", re.I ^ re.U)
 has_dot_where: Pattern = re.compile(r"\.where\([a-z\=\'\"()]+\)", re.I ^ re.U)
 parentheses_wrapped: Pattern = re.compile(r"^\(.+\)$")
+default_result_count = 100
 logger = logging.getLogger("fhirpath.search")
 
 
@@ -1120,7 +1121,7 @@ class Search(object):
     def attach_limit_terms(self, builder):
         """ """
         if "_count" not in self.result_params:
-            return builder
+            return builder.limit(default_result_count)
 
         offset = 0
         if "page" in self.result_params:
