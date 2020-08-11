@@ -219,15 +219,14 @@ class ElasticsearchEngine(Engine):
                 continue
             row = EngineResultRow()
 
-            # FIXME
-            row.append(res["_source"][field_index_name])
-            # for fullpath in selects:
-            #     source = res["_source"]
-            #     for path_ in fullpath.split("."):
-            #         source = self._traverse_for_value(source, path_)
-            #         if source is None:
-            #             break
-            #     row.append(source)
+            for fullpath in selects:
+                source = res["_source"]
+                for path_ in fullpath.split("."):
+                    source = self._traverse_for_value(source, path_)
+                    if source is None:
+                        break
+                row.append(source)
+
             container.add(row)
 
     def process_raw_result(self, rawresult, selects, query_type, field_index_name):
