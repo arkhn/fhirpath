@@ -88,7 +88,6 @@ class ElasticsearchEngine(Engine):
                 continue
             parts = el_path._raw.split(".")
             source_filters.append(".".join([field_index_name] + parts[1:]))
-            # FIXME
 
         return source_filters
 
@@ -219,14 +218,16 @@ class ElasticsearchEngine(Engine):
                 continue
             row = EngineResultRow()
 
-            for fullpath in selects:
-                source = res["_source"]
-                for path_ in fullpath.split("."):
-                    source = self._traverse_for_value(source, path_)
-                    if source is None:
-                        break
-                row.append(source)
-
+            # FIXME: should we extract the fields manually since it already done is es ?
+            # also, why is EngineRowResult a list ? it causes an error in BundleWrapper.attach_entry
+            row.append(res["_source"][field_index_name])
+            # for fullpath in selects:
+            #     source = res["_source"]
+            #     for path_ in fullpath.split("."):
+            #         source = self._traverse_for_value(source, path_)
+            #         if source is None:
+            #             break
+            #     row.append(source)
             container.add(row)
 
     def process_raw_result(self, rawresult, selects, query_type, field_index_name):

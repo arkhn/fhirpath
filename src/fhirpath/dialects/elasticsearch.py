@@ -105,21 +105,16 @@ class ElasticSearchDialect(DialectBase):
         if multiple_ is True and not isinstance(value, (list, tuple)):
             value = [value]
 
-        # FIXME: remove resource_type from path eg (Observation.active => active)
-        # path = path.split(".", 1)[1]
-
         if multiple_:
             q = {"terms": {path: value}}
         else:
-            q = {"term": {path: value}}
+            q = {"match": {path: value}}
 
         return q
 
     @staticmethod
     def create_sa_term(path, value):
         """Create ES Prefix Query"""
-        # FIXME: remove resource_type from path eg (Observation.active => active)
-        # path = path.split(".", 1)[1]
 
         if isinstance(value, (list, tuple)):
             if len(value) == 1:
@@ -675,9 +670,7 @@ class ElasticSearchDialect(DialectBase):
         """We force apply resource type boundary"""
         for res_name, _res_klass in query.get_from():
             path_ = "{0}.resourceType".format(root_replacer or res_name)
-            # FIXME ? "term" is case sensitive where "match" is not ?
-            # term = {"term": {path_: res_name}}
-            term = {"match": {path_: res_name}}
+            term = {"term": {path_: res_name}}
             body_structure["query"]["bool"]["filter"].append(term)
 
     @staticmethod

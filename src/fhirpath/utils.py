@@ -28,6 +28,7 @@ import pkg_resources
 from pydantic.validators import bool_validator
 from yarl import URL
 from zope.interface import implementer
+from fhir.resources import construct_fhir_element
 
 from fhirpath.thirdparty import Proxy
 
@@ -557,7 +558,10 @@ class BundleWrapper:
             # entry = BundleEntry
             entry = dict()
             entry["fullUrl"] = "{0}/{1}".format(resource_type, resource_id)
-            entry["resource"] = resource
+
+            # use the model factory in order to validate the resource
+            entry["resource"] = construct_fhir_element(resource_type, resource).json()
+
             # search = BundleEntrySearch
             search = {"mode": mode}
             entry["search"] = search
@@ -608,31 +612,6 @@ class BundleWrapper:
                 container.append(self.make_link("last", url, url_params))
 
         self.data["link"] = container
-
-    def attach_error(self, severity, code, details=None):
-        if not self.bundle.entry:
-            self.bundle.entry = list()
-
-        operationOutcome = lookup_fhir_class(
-            "OperationOutcome", fhir_release=self.fhir_version
-        )({"id": str(uuid.uuid4()), "issue": [{"severity": severity, "code": code}]})
-        if details:
-            operationOutcome.issue[0].details = lookup_fhir_class(
-                "CodeableConcept", fhir_release=self.fhir_version
-            )({"text": details})
-
-        item = lookup_fhir_class("BundleEntry", fhir_release=self.fhir_version)()
-        item.fullUrl = "{0}/{1}".format(
-            operationOutcome.resource_type, operationOutcome.id
-        )
-        item.resource = operationOutcome
-
-        item.search = lookup_fhir_class(
-            "BundleEntrySearch", fhir_release=self.fhir_version
-        )()
-        item.search.mode = "outcome"
-
-        self.bundle.entry.append(item)
 
     def make_link(self, relation, url, params=None):
         """ """

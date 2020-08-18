@@ -410,7 +410,6 @@ class QueryResult(ABC):
             self._query, self._unrestricted, EngineQueryType.COUNT
         )
         # return result.header.total
-        print("res", result)
         return result
 
     def empty(self):

@@ -959,7 +959,6 @@ class ElementPath(object):
             self._path = self._raw
             return
 
-        print("PARSE :: ", self._raw)
         # xxx: more things soon
         if has_dot_as.search(self._raw):
             match = has_dot_as.search(self._raw)
