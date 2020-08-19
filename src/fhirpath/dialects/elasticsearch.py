@@ -99,6 +99,24 @@ class ElasticSearchDialect(DialectBase):
         return qr
 
     @staticmethod
+    def add_nested_path(context, sort_sub_query, root_replacer):
+        """ Useful to sort on nested field. """
+        # TODO multiple nested not supported
+        path_context = context
+
+        while True:
+            if path_context.multiple and not path_context.type_is_primitive:
+                path_ = ElasticSearchDialect.apply_path_replacement(
+                    str(path_context._path), root_replacer
+                )
+                sort_sub_query["nested"] = {"path": path_}
+            if path_context.is_root():
+                break
+            path_context = path_context.parent
+
+        return sort_sub_query
+
+    @staticmethod
     def create_term(path, value, multiple=False):
         """Create ES Query term"""
         multiple_ = isinstance(value, (list, tuple)) or multiple is True
@@ -651,6 +669,16 @@ class ElasticSearchDialect(DialectBase):
     def apply_sort(sort_terms, body_structure, root_replacer=None):
         """ """
         for term in sort_terms:
+            sort_sub_query = {
+                "order": term.order == SortOrderType.DESC and "desc" or "asc",
+                "unmapped_type": "long",
+            }
+            sort_sub_query = ElasticSearchDialect.add_nested_path(
+                term.path.context,
+                sort_sub_query,
+                root_replacer
+            )
+
             if root_replacer is not None:
                 path_ = ".".join([root_replacer] + list(term.path.path.split(".")[1:]))
             else:
@@ -658,10 +686,7 @@ class ElasticSearchDialect(DialectBase):
             item = {
                 # https://www.elastic.co/guide/en/elasticsearch/\
                 # reference/current/search-request-body.html#_ignoring_unmapped_fields
-                path_: {
-                    "order": term.order == SortOrderType.DESC and "desc" or "asc",
-                    "unmapped_type": "long",
-                }
+                path_: sort_sub_query
             }
             body_structure["sort"].append(item)
 
