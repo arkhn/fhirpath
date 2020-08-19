@@ -244,8 +244,8 @@ class Search(object):
             for nd in normalized_data:
                 self.add_term(nd, terms_container)
 
-        builder = self.attach_summary_terms(builder.where(*terms_container))
         builder = self.attach_select_terms(builder.where(*terms_container))
+        builder = self.attach_summary_terms(builder)
         builder = self.attach_sort_terms(builder)
         builder = self.attach_limit_terms(builder)
 
