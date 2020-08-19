@@ -1125,7 +1125,8 @@ class Search(object):
             return builder
 
         paths = [f"{self.context.resource_name}.{el}" for el in self.result_params["_elements"]]
-        return builder.select(*paths)
+        mandatories = [f"{self.context.resource_name}.id"]
+        return builder.select(*paths, *mandatories)
 
     def attach_summary_terms(self, builder):
         """ """
