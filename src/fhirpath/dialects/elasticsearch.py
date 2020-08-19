@@ -717,6 +717,15 @@ class ElasticSearchDialect(DialectBase):
         if len(includes) > 0:
             body_structure["_source"]["includes"].extend(includes)
 
+        # TODO excludes for other dialects than elastic?
+        excludes = list()
+        if len(query.get_exclude()) > 0:
+            for path_el in query.get_exclude():
+                excludes.append(replace(path_el))
+
+        if len(excludes) > 0:
+            body_structure["_source"]["excludes"].extend(excludes)
+
     @staticmethod
     def create_structure():
         """ """

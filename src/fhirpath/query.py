@@ -20,6 +20,7 @@ from .exceptions import MultipleResultsFound
 from .fql.expressions import and_, fql, sort_
 from .fql.types import (
     ElementPath,
+    ExcludeClause,
     FromClause,
     LimitClause,
     SelectClause,
@@ -52,6 +53,7 @@ class Query(ABC):
         fhir_release: FHIR_VERSION,
         from_: FromClause,
         select: SelectClause,
+        exclude: ExcludeClause,
         where: WhereClause,
         sort: SortClause,
         limit: LimitClause,
@@ -61,6 +63,7 @@ class Query(ABC):
         self.fhir_release: FHIR_VERSION = FHIR_VERSION.normalize(fhir_release)
         self._from: FromClause = from_
         self._select: SelectClause = select
+        self._exclude: ExcludeClause = exclude
         self._where: WhereClause = where
         self._sort: SortClause = sort
         self._limit: LimitClause = limit
@@ -81,6 +84,7 @@ class Query(ABC):
             builder._engine.fhir_release,  # type: ignore
             builder._from,  # type: ignore
             builder._select,  # type: ignore
+            builder._exclude,  # type: ignore
             builder._where,  # type: ignore
             builder._sort,  # type: ignore
             builder._limit,  # type: ignore
@@ -98,6 +102,10 @@ class Query(ABC):
     def get_select(self) -> SelectClause:
         """ """
         return self._select
+
+    def get_exclude(self) -> ExcludeClause:
+        """ """
+        return self._exclude
 
     def get_sort(self) -> SortClause:
         """ """
@@ -143,6 +151,7 @@ class QueryBuilder(ABC):
 
         self._from: FromClause = FromClause()
         self._select: SelectClause = SelectClause()
+        self._exclude: ExcludeClause = ExcludeClause()
         self._where: WhereClause = WhereClause()
         self._sort: SortClause = SortClause()
         self._limit: LimitClause = LimitClause()
@@ -177,6 +186,9 @@ class QueryBuilder(ABC):
         # Finalize path elements
         [se.finalize(self._engine) for se in self._select]
 
+        # Finalize excluded elements
+        [se.finalize(self._engine) for se in self._exclude]
+
         # Finalize where terms on demand
         [wr.finalize(self._engine) for wr in self._where]
 
@@ -198,6 +210,7 @@ class QueryBuilder(ABC):
         newone._limit = copy(self._limit)
         newone._from = copy(self._from)
         newone._select = copy(self._select)
+        newone._exclude = copy(self._exclude)
         newone._where = copy(self._where)
         newone._sort = copy(self._sort)
 
@@ -228,6 +241,19 @@ class QueryBuilder(ABC):
             if not (el_path.star or el_path.non_fhir):
                 self._validate_root_path(str(el_path))
             self._select.append(el_path)
+
+    @builder
+    def exclude(self, *args):
+        """ """
+        self._pre_check()
+
+        for el_path in args:
+            if not IElementPath.providedBy(el_path):
+                el_path = ElementPath(el_path)
+            # Make sure correct root path
+            if not (el_path.star or el_path.non_fhir):
+                self._validate_root_path(str(el_path))
+            self._exclude.append(el_path)
 
     @builder
     def where(self, *args, **kwargs):

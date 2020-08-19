@@ -15,6 +15,7 @@ from fhirpath.enums import (
     WhereConstraintType,
 )
 from fhirpath.exceptions import ValidationError, NoResultFound
+from fhirpath.fhirspec import lookup_fhir_resource_spec
 from fhirpath.fql import (
     G_,
     T_,
@@ -108,19 +109,16 @@ class Search(object):
         """ """
         if not ISearchContext.providedBy(context):
             raise ValidationError(
-                ":context must be implemented "
-                "fhirpath.interfaces.ISearchContext interface"
+                ":context must be implemented fhirpath.interfaces.ISearchContext interface"
             )
 
         if query_string is None and params is None:
             raise ValidationError(
-                "At least one of value is required, "
-                "either ´query_string´ or search ´params´ "
+                "At least one of value is required, either ´query_string´ or search ´params´ "
             )
         if query_string and params:
             raise ValidationError(
-                "Only value from one of arguments "
-                "(´query_string´, ´params´) is accepted"
+                "Only value from one of arguments (´query_string´, ´params´) is accepted"
             )
 
     def prepare_params(self, all_params):
@@ -246,13 +244,13 @@ class Search(object):
             for nd in normalized_data:
                 self.add_term(nd, terms_container)
 
+        builder = self.attach_summary_terms(builder.where(*terms_container))
         builder = self.attach_select_terms(builder.where(*terms_container))
         builder = self.attach_sort_terms(builder)
         builder = self.attach_limit_terms(builder)
 
         result = builder(
-            unrestricted=self.context.unrestricted,
-            async_result=self.context.async_result,
+            unrestricted=self.context.unrestricted, async_result=self.context.async_result,
         )
         return result
 
@@ -495,9 +493,7 @@ class Search(object):
 
         raise NotImplementedError
 
-    def single_valued_coding_term(
-        self, path_, value, modifier, ignore_not_modifier=False
-    ):
+    def single_valued_coding_term(self, path_, value, modifier, ignore_not_modifier=False):
         """ """
         operator_, original_value = value
 
@@ -691,9 +687,7 @@ class Search(object):
             assert path_._where.name == "system"
 
             terms = [
-                self.create_term(
-                    path_ / "system", (value[0], path_._where.value), None
-                ),
+                self.create_term(path_ / "system", (value[0], path_._where.value), None),
                 self.create_term(path_ / "value", value, None),
             ]
         else:
@@ -902,9 +896,7 @@ class Search(object):
                 "You cannot use modifier (above,below) and prefix (sa,eb) at a time"
             )
         if modifier == "contains" and operator_ != "eq":
-            raise NotImplementedError(
-                "In case of :contains modifier, only eq prefix is supported"
-            )
+            raise NotImplementedError("In case of :contains modifier, only eq prefix is supported")
 
     def create_term(self, path_, value, modifier):
         """ """
@@ -1070,15 +1062,12 @@ class Search(object):
         """
         if modifier in ("missing", "exists"):
             if not isinstance(param_value, tuple):
-                raise ValidationError(
-                    "Multiple values are not allowed for missing(exists) search"
-                )
+                raise ValidationError("Multiple values are not allowed for missing(exists) search")
 
             if not param_value[1] in ("true", "false"):
 
                 raise ValidationError(
-                    "Only ´true´ or ´false´ as value is "
-                    "allowed for missing(exists) search"
+                    "Only ´true´ or ´false´ as value is allowed for missing(exists) search"
                 )
 
     def resolve_path_context(self, param_name):
@@ -1091,10 +1080,7 @@ class Search(object):
         if search_param.type == "composite":
             raise NotImplementedError
 
-        if search_param.type in (
-            "token",
-            "composite",
-        ) and search_param.code.startswith("combo-"):
+        if search_param.type in ("token", "composite") and search_param.code.startswith("combo-"):
             raise NotImplementedError
 
         dotted_path = search_param.expression
@@ -1138,11 +1124,49 @@ class Search(object):
         if "_elements" not in self.result_params:
             return builder
 
-        paths = [
-            f"{self.context.resource_name}.{el}"
-            for el in self.result_params["_elements"]
-        ]
+        paths = [f"{self.context.resource_name}.{el}" for el in self.result_params["_elements"]]
         return builder.select(*paths)
+
+    def attach_summary_terms(self, builder):
+        """ """
+        if "_summary" not in self.result_params:
+            return builder
+
+        if self.result_params["_summary"] in ["count", "false"]:
+            return builder
+
+        if self.result_params["_summary"] == "data":
+            # TODO should we include all elements except text instead of exluding?
+            return builder.exclude(f"{self.context.resource_name}.text")
+
+        spec = lookup_fhir_resource_spec(self.context.resource_name, True, FHIR_VERSION.R4)
+
+        if self.result_params["_summary"] == "true":
+            summary_elements = [
+                f"{self.context.resource_name}.id",
+                f"{self.context.resource_name}.meta",
+            ]
+            for el in spec.elements:
+                if el.is_summary:
+                    if el.path.endswith("[x]"):
+                        for prop in el.as_properties():
+                            summary_elements.append(f"{prop.path.rsplit('.', 1)[0]}.{prop.name}")
+                    else:
+                        summary_elements.append(el.path)
+
+            return builder.select(*summary_elements)
+
+        if self.result_params["_summary"] == "text":
+            required_root_elements = [
+                el.path for el in spec.elements if el.n_min is not None and el.n_min > 0
+            ]
+            text_elements = [
+                f"{self.context.resource_name}.text",
+                f"{self.context.resource_name}.id",
+                f"{self.context.resource_name}.meta",
+                *required_root_elements,
+            ]
+            return builder.select(*text_elements)
 
     def response(self, result):
         """ """
@@ -1174,8 +1198,7 @@ class Search(object):
         """ """
         if len(raw_value) < 1:
             raise NotImplementedError(
-                "Currently duplicate composite type "
-                "params are not allowed or supported"
+                "Currently duplicate composite type params are not allowed or supported"
             )
         value_parts = raw_value[0].split("&")
         assert len(value_parts) == 2

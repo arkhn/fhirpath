@@ -87,6 +87,10 @@ class SelectClause(FqlClause):
     """ """
 
 
+class ExcludeClause(FqlClause):
+    """ """
+
+
 class FromClause(FqlClause):
     """ """
 
