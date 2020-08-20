@@ -50,9 +50,7 @@ class ElasticsearchEngine(Engine):
         """ """
         raise NotImplementedError
 
-    def _add_result_headers(
-        self, query, result, source_filters, compiled, field_index_name
-    ):
+    def _add_result_headers(self, query, result, source_filters, compiled, field_index_name):
         """ """
         # Process additional meta
         result.header.raw_query = self.connection.finalize_search_params(compiled)
@@ -96,9 +94,7 @@ class ElasticsearchEngine(Engine):
         """
         if isinstance(source, dict):
             # xxx: validate path, not blindly sending None
-            if CONTAINS_INDEX_OR_FUNCTION.search(path_) and CONTAINS_FUNCTION.match(
-                path_
-            ):
+            if CONTAINS_INDEX_OR_FUNCTION.search(path_) and CONTAINS_FUNCTION.match(path_):
                 raise ValidationError(
                     f"Invalid path {path_} has been supllied!"
                     "Path cannot contain function if source type is dict"
@@ -158,50 +154,42 @@ class ElasticsearchEngine(Engine):
 
     def _execute(self, query, unrestricted, query_type):
         """ """
-        # for now we support single from resource
         query_copy = query.clone()
-
-        resource_type = query.get_from()[0][1].get_resource_type()
-        field_index_name = self.calculate_field_index_name(resource_type)
 
         if unrestricted is False:
             self.build_security_query(query_copy)
 
-        params = {
-            "query": query_copy,
-            "root_replacer": field_index_name,
-            "mapping": self.get_mapping(resource_type),
-        }
-
-        compiled = self.dialect.compile(**params)
+        compiled = self.dialect.compile(
+            query_copy,
+            calculate_field_index_name=self.calculate_field_index_name,
+            get_mapping=self.get_mapping,
+        )
         if query_type == EngineQueryType.DML:
             raw_result = self.connection.fetch(self.get_index_name(), compiled)
-        elif query_type == EngineQueryType.COUNT:
+        elif query_type == EngineQueryType.COUNT:  # TODO can we use that for _summary=count?
             raw_result = self.connection.count(self.get_index_name(), compiled)
         else:
             raise NotImplementedError
 
-        return raw_result, field_index_name, compiled
+        return raw_result, compiled
 
     def execute(self, query, unrestricted=False, query_type=EngineQueryType.DML):
         """ """
-        raw_result, field_index_name, compiled = self._execute(
-            query, unrestricted, query_type
-        )
+        # TODO what is field_index_name used for?
+        resource_type = query.get_from()[0][1].get_resource_type()
+        field_index_name = self.calculate_field_index_name(resource_type)
+
+        raw_result, compiled = self._execute(query, unrestricted, query_type)
         if query_type == EngineQueryType.COUNT:
             source_filters = []
         else:
             source_filters = self._get_source_filters(query, field_index_name)
 
         # xxx: process result
-        result = self.process_raw_result(
-            raw_result, source_filters, query_type, field_index_name
-        )
+        result = self.process_raw_result(raw_result, source_filters, query_type, field_index_name)
 
         # Process additional meta
-        self._add_result_headers(
-            query, result, source_filters, compiled, field_index_name
-        )
+        self._add_result_headers(query, result, source_filters, compiled, field_index_name)
         return result
 
     def build_security_query(self, query):
@@ -240,18 +228,12 @@ class ElasticsearchEngine(Engine):
         else:
             total = rawresult["hits"]["total"]
 
-        result = EngineResult(
-            header=EngineResultHeader(total=total), body=EngineResultBody()
-        )
+        result = EngineResult(header=EngineResultHeader(total=total), body=EngineResultBody())
         # extract primary data
         if query_type != EngineQueryType.COUNT:
-            self.extract_hits(
-                selects, rawresult["hits"]["hits"], result.body, field_index_name
-            )
+            self.extract_hits(selects, rawresult["hits"]["hits"], result.body, field_index_name)
 
-        if "_scroll_id" in rawresult and result.header.total > len(
-            rawresult["hits"]["hits"]
-        ):
+        if "_scroll_id" in rawresult and result.header.total > len(rawresult["hits"]["hits"]):
             # we need to fetch all!
             consumed = len(rawresult["hits"]["hits"])
 

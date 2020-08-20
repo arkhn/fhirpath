@@ -100,8 +100,11 @@ class Search(object):
 
         self.prepare_params(all_params)
 
+        # self.definition = Search.get_parameter_definition(
+        #     self.context.engine.fhir_release, self.context.resource_name
+        # )
         self.definition = Search.get_parameter_definition(
-            self.context.engine.fhir_release, self.context.resource_name
+            self.context.engine.fhir_release, "Patient"
         )
 
     @staticmethod
@@ -159,9 +162,17 @@ class Search(object):
                 raise ValidationError("'_total' cannot be multiple!")
             self.result_params["_total"] = _total[0]
 
+        _type = all_params.popone("_type", None)
+        if _type:
+            self.result_params["_type"] = _type.split(",")
+
         _summary = all_params.popone("_summary", None)
         if _summary:
             self.result_params["_summary"] = _summary
+
+        _elements = all_params.popone("_elements", None)
+        if _elements:
+            self.result_params["_elements"] = _elements.split(",")
 
         _include = all_params.popone("_include", None)
         if _include:
@@ -170,10 +181,6 @@ class Search(object):
         _revinclude = all_params.popone("_revinclude", None)
         if _revinclude:
             self.result_params["_revinclude"] = _revinclude
-
-        _elements = all_params.popone("_elements", None)
-        if _elements:
-            self.result_params["_elements"] = _elements.split(",")
 
         _contained = all_params.popone("_contained", None)
         if _contained:
@@ -233,7 +240,8 @@ class Search(object):
 
     def build(self):
         """Create QueryBuilder from search query string"""
-        builder = Q_(self.context.resource_name, self.context.engine)
+        resources = [self.context.resource_name] if self.context.resource_name else []
+        builder = Q_(resources, self.context.engine)
         terms_container = list()
         # making sure no duplicate keys, important!
         for param_name in set(self.search_params):
@@ -244,7 +252,9 @@ class Search(object):
             for nd in normalized_data:
                 self.add_term(nd, terms_container)
 
-        builder = self.attach_select_terms(builder.where(*terms_container))
+        builder = self.attach_from_terms(builder)
+        builder = builder.where(*terms_container)
+        builder = self.attach_select_terms(builder)
         builder = self.attach_summary_terms(builder)
         builder = self.attach_sort_terms(builder)
         builder = self.attach_limit_terms(builder)
@@ -1130,6 +1140,13 @@ class Search(object):
         paths = [f"{self.context.resource_name}.{el}" for el in self.result_params["_elements"]]
         mandatories = [f"{self.context.resource_name}.id"]
         return builder.select(*paths, *mandatories)
+
+    def attach_from_terms(self, builder):
+        """ """
+        if "_type" not in self.result_params:
+            return builder
+
+        return builder.from_(self.result_params["_type"])
 
     def attach_summary_terms(self, builder):
         """ """

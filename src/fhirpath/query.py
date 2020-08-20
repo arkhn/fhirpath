@@ -1,7 +1,7 @@
 # _*_ coding: utf-8 _*_
 from abc import ABC
 from copy import copy
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, List, Optional, Union
 
 from zope.interface import implementer
 
@@ -217,17 +217,17 @@ class QueryBuilder(ABC):
         return newone
 
     @builder
-    def from_(self, resource_type: str, alias: Optional[str] = None):
+    def from_(self, resource_types: List[str], alias: Optional[str] = None):
         """ """
         required_not_finalized(self)
 
         if len(self._from) > 0:
-            # info: we are allowing single resource only
             raise ValidationError("from_ value already assigned!")
         assert self._engine
-        model = Model.create(resource_type, fhir_release=self._engine.fhir_release)
-        alias = alias or model.__name__  # xxx: model.get_resource_type()
-        self._from.append((alias, model))
+        for resource_type in resource_types:
+            model = Model.create(resource_type, fhir_release=self._engine.fhir_release)
+            alias = alias or model.__name__  # xxx: model.get_resource_type()
+            self._from.append((alias, model))
 
     @builder
     def select(self, *args):
@@ -561,9 +561,9 @@ class AsyncQueryResult(QueryResult):
         return self.count()
 
 
-def Q_(resource=None, engine=None):
+def Q_(resource_names=None, engine=None):
     """ """
     builder = Query._builder(engine)
-    if resource is not None:
-        builder = builder.from_(resource)
+    if resource_names:
+        builder = builder.from_(resource_names)
     return builder

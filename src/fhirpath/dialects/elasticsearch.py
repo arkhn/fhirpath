@@ -247,7 +247,7 @@ class ElasticSearchDialect(DialectBase):
             else:
                 return info_
 
-    def compile(self, query, mapping=None, root_replacer=None, **kwargs):
+    def compile_for_single_resource_type(self, query, resource_type, mapping=None, root_replacer=None):
         """
         :param: query
 
@@ -281,9 +281,13 @@ class ElasticSearchDialect(DialectBase):
             container.append(q)
 
         # ResourceType bind
-        ElasticSearchDialect.apply_from_constraint(
-            query, body_structure, root_replacer=root_replacer
-        )
+        # TODO put that back in method
+        # ElasticSearchDialect.apply_from_constraint(
+        #     query, body_structure, root_replacer=root_replacer
+        # )
+        path_ = "{0}.resourceType".format(root_replacer or resource_type)
+        term = {"match": {path_: resource_type}}
+        body_structure["query"]["bool"]["filter"].append(term)
         # Sorting
         ElasticSearchDialect.apply_sort(
             query.get_sort(), body_structure, root_replacer=root_replacer
@@ -302,6 +306,30 @@ class ElasticSearchDialect(DialectBase):
                 body_structure["query"]["bool"]["minimum_should_match"] = 1
 
         return body_structure
+
+    def compile(self, query, calculate_field_index_name, get_mapping):
+        """ """
+        query_fragments = []
+
+        for from_clause in query.get_from():
+            resource_type = from_clause[1].get_resource_type()
+            field_index_name = calculate_field_index_name(resource_type)
+            mapping = get_mapping(resource_type)
+
+            query_fragments.append(
+                self.compile_for_single_resource_type(
+                    query, resource_type=resource_type, mapping=mapping, root_replacer=field_index_name
+                )
+            )
+
+        if len(query_fragments) > 1:
+            return {
+                "query": {
+                    "bool": {"should": [frag["query"] for frag in query_fragments]}
+                }
+            }
+        else:
+            return query_fragments[0]
 
     def resolve_term(self, term, mapping, root_replacer):
         """ """
