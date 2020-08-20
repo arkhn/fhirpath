@@ -307,6 +307,9 @@ class Search(object):
                 term_factory = self.create_humanname_term
             elif klass_name == "Money":
                 term_factory = self.create_money_term
+            elif klass_name == "Narrative":
+                path_ = path_ / "div"
+                term_factory = self.create_term
             else:
                 raise NotImplementedError
             term = term_factory(path_, param_value, modifier)

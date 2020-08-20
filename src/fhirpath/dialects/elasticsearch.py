@@ -373,6 +373,7 @@ class ElasticSearchDialect(DialectBase):
 
                 if term.path.context.type_name in (
                     "string",
+                    "xhtml",
                     "uri",
                     "url",
                     "canonical",
@@ -695,7 +696,7 @@ class ElasticSearchDialect(DialectBase):
         """We force apply resource type boundary"""
         for res_name, _res_klass in query.get_from():
             path_ = "{0}.resourceType".format(root_replacer or res_name)
-            term = {"term": {path_: res_name}}
+            term = {"match": {path_: res_name}}
             body_structure["query"]["bool"]["filter"].append(term)
 
     @staticmethod
