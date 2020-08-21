@@ -27,6 +27,7 @@ from fhirpath.fql import (
     not_exists_,
     sa_,
     sort_,
+    exact_,
 )
 from fhirpath.fql.types import ElementPath
 from fhirpath.interfaces import IGroupTerm, ISearch, ISearchContext
@@ -260,7 +261,8 @@ class Search(object):
         builder = self.attach_limit_terms(builder)
 
         result = builder(
-            unrestricted=self.context.unrestricted, async_result=self.context.async_result,
+            unrestricted=self.context.unrestricted,
+            async_result=self.context.async_result,
         )
         return result
 
@@ -506,7 +508,9 @@ class Search(object):
 
         raise NotImplementedError
 
-    def single_valued_coding_term(self, path_, value, modifier, ignore_not_modifier=False):
+    def single_valued_coding_term(
+        self, path_, value, modifier, ignore_not_modifier=False
+    ):
         """ """
         operator_, original_value = value
 
@@ -700,7 +704,9 @@ class Search(object):
             assert path_._where.name == "system"
 
             terms = [
-                self.create_term(path_ / "system", (value[0], path_._where.value), None),
+                self.create_term(
+                    path_ / "system", (value[0], path_._where.value), None
+                ),
                 self.create_term(path_ / "value", value, None),
             ]
         else:
@@ -909,7 +915,9 @@ class Search(object):
                 "You cannot use modifier (above,below) and prefix (sa,eb) at a time"
             )
         if modifier == "contains" and operator_ != "eq":
-            raise NotImplementedError("In case of :contains modifier, only eq prefix is supported")
+            raise NotImplementedError(
+                "In case of :contains modifier, only eq prefix is supported"
+            )
 
     def create_term(self, path_, value, modifier):
         """ """
@@ -936,6 +944,8 @@ class Search(object):
             term = T_(path_)
             if modifier == "not":
                 term = not_(term)
+            elif modifier == "exact":
+                term = exact_(term)
             elif modifier == "below" and operator_ == "eq":
                 operator_ = "sa"
             elif modifier == "above" and operator_ == "eq":
@@ -1075,7 +1085,9 @@ class Search(object):
         """
         if modifier in ("missing", "exists"):
             if not isinstance(param_value, tuple):
-                raise ValidationError("Multiple values are not allowed for missing(exists) search")
+                raise ValidationError(
+                    "Multiple values are not allowed for missing(exists) search"
+                )
 
             if not param_value[1] in ("true", "false"):
 
@@ -1093,7 +1105,9 @@ class Search(object):
         if search_param.type == "composite":
             raise NotImplementedError
 
-        if search_param.type in ("token", "composite") and search_param.code.startswith("combo-"):
+        if search_param.type in ("token", "composite") and search_param.code.startswith(
+            "combo-"
+        ):
             raise NotImplementedError
 
         dotted_path = search_param.expression
@@ -1137,7 +1151,10 @@ class Search(object):
         if "_elements" not in self.result_params:
             return builder
 
-        paths = [f"{self.context.resource_name}.{el}" for el in self.result_params["_elements"]]
+        paths = [
+            f"{self.context.resource_name}.{el}"
+            for el in self.result_params["_elements"]
+        ]
         mandatories = [f"{self.context.resource_name}.id"]
         return builder.select(*paths, *mandatories)
 
@@ -1160,7 +1177,9 @@ class Search(object):
             # TODO should we include all elements except text instead of exluding?
             return builder.exclude(f"{self.context.resource_name}.text")
 
-        spec = lookup_fhir_resource_spec(self.context.resource_name, True, FHIR_VERSION.R4)
+        spec = lookup_fhir_resource_spec(
+            self.context.resource_name, True, FHIR_VERSION.R4
+        )
 
         if self.result_params["_summary"] == "true":
             summary_elements = [
@@ -1171,7 +1190,9 @@ class Search(object):
                 if el.is_summary:
                     if el.path.endswith("[x]"):
                         for prop in el.as_properties():
-                            summary_elements.append(f"{prop.path.rsplit('.', 1)[0]}.{prop.name}")
+                            summary_elements.append(
+                                f"{prop.path.rsplit('.', 1)[0]}.{prop.name}"
+                            )
                     else:
                         summary_elements.append(el.path)
 

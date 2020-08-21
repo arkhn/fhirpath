@@ -1,5 +1,5 @@
 # _*_ coding: utf-8 _*_
-from fhirpath.enums import OPERATOR
+from fhirpath.enums import OPERATOR, TermMatchType
 from fhirpath.interfaces.fql import IGroupTerm, ITerm
 from fhirpath.types import EMPTY_VALUE
 from fhirpath.utils import reraise
@@ -159,6 +159,13 @@ def contains_(path, value=EMPTY_VALUE):
     """ """
     term_or_group = _prepare_term_or_group(path, value)
     term_or_group.comparison_operator = OPERATOR.contains
+    return term_or_group
+
+
+def exact_(path, value=EMPTY_VALUE):
+    """ """
+    term_or_group = _prepare_term_or_group(path, value)
+    term_or_group.match_type = TermMatchType.EXACT
     return term_or_group
 
 

@@ -15,6 +15,7 @@ from .expressions import (
     or_,
     sa_,
     sort_,
+    exact_,
 )
 from .types import ElementPath
 

@@ -117,7 +117,7 @@ class ElasticSearchDialect(DialectBase):
         return sort_sub_query
 
     @staticmethod
-    def create_term(path, value, multiple=False):
+    def create_term(path, value, multiple=False, match_type=None):
         """Create ES Query term"""
         multiple_ = isinstance(value, (list, tuple)) or multiple is True
         if multiple_ is True and not isinstance(value, (list, tuple)):
@@ -125,6 +125,8 @@ class ElasticSearchDialect(DialectBase):
 
         if multiple_:
             q = {"terms": {path: value}}
+        elif match_type == TermMatchType.EXACT:
+            q = {"term": {f"{path}.raw": value}}
         else:
             q = {"match": {path: value}}
 
@@ -438,7 +440,10 @@ class ElasticSearchDialect(DialectBase):
                             )
                         else:
                             q = ElasticSearchDialect.create_term(
-                                dotted_path, value, multiple=multiple
+                                dotted_path,
+                                value,
+                                multiple=multiple,
+                                match_type=term.match_type,
                             )
                         resolved = q, term.unary_operator
 
@@ -616,7 +621,7 @@ class ElasticSearchDialect(DialectBase):
 
         else:
             qr = ElasticSearchDialect.create_term(
-                path_, value, term.path.context.multiple
+                path_, value, term.path.context.multiple, match_type=term.match_type
             )
 
         resolved = qr, term.unary_operator
@@ -668,7 +673,9 @@ class ElasticSearchDialect(DialectBase):
                 resolved = ElasticSearchDialect.resolve_string_term(term, {}, None)
             else:
                 value = term.get_real_value()
-                q = ElasticSearchDialect.create_term(term.path, value)
+                q = ElasticSearchDialect.create_term(
+                    term.path, value, match_type=term.match_type
+                )
                 resolved = q, term.unary_operator
 
         elif visit_name in ("dateTime", "date", "time", "instant"):
@@ -703,9 +710,7 @@ class ElasticSearchDialect(DialectBase):
                 "unmapped_type": "long",
             }
             sort_sub_query = ElasticSearchDialect.add_nested_path(
-                term.path.context,
-                sort_sub_query,
-                root_replacer
+                term.path.context, sort_sub_query, root_replacer
             )
 
             if root_replacer is not None:
