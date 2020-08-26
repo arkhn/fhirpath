@@ -108,9 +108,24 @@ class Search(object):
         self.prepare_params(all_params)
 
         # FIXME: does not work when searching on multiple types with _type
-        self.definition = Search.get_parameters_definition(
-            self.context.engine.fhir_release, self.context.resource_name
-        )
+        if self.context.resource_name:
+            self.definition = Search.get_parameters_definition(
+                self.context.engine.fhir_release, self.context.resource_name
+            )
+        elif "_type" in self.result_params:
+            types = self.result_params["_type"]
+            all_definitions = [
+                Search.get_parameters_definition(self.context.engine.fhir_release, resource_name)
+                for resource_name in types
+            ]
+            self.allowed_search_params = {
+                k
+                for k in all_definitions[0]
+                if all(k in definition for definition in all_definitions)
+            }
+        else:
+            # TODO definitions for search params common to all resources
+            pass
 
     @staticmethod
     def validate_params(context, query_string, params):
@@ -247,26 +262,26 @@ class Search(object):
         """Create QueryBuilder from search query string"""
         resources = [self.context.resource_name] if self.context.resource_name else []
         builder = Q_(resources, self.context.engine)
-        terms_container = list()
-        # making sure no duplicate keys, important!
-        for param_name in set(self.search_params):
-            """ """
-            normalized_data = self.normalize_param(param_name)
-            if isinstance(normalized_data, tuple):
-                normalized_data = [normalized_data]
-            for nd in normalized_data:
-                self.add_term(nd, terms_container)
 
-        builder = self.attach_from_terms(builder)
-        builder = builder.where(*terms_container)
+        if self.context.resource_name:
+            builder = self.attach_where_terms(builder)
+        elif "_type" in self.result_params:
+            for resource_name in self.result_params["_type"]:
+                self.definition = Search.get_parameters_definition(
+                    self.context.engine.fhir_release, resource_name
+                )
+                builder = self.attach_where_terms(builder)
+        else:
+            pass
+            # TODO
+
         builder = self.attach_select_terms(builder)
         builder = self.attach_summary_terms(builder)
         builder = self.attach_sort_terms(builder)
         builder = self.attach_limit_terms(builder)
 
         result: QueryResult = builder(
-            unrestricted=self.context.unrestricted,
-            async_result=self.context.async_result,
+            unrestricted=self.context.unrestricted, async_result=self.context.async_result,
         )
 
         return result
@@ -296,9 +311,7 @@ class Search(object):
             if ref_param.type != "reference":
                 raise Exception("rly ? go fuck yourself")
             elif len(ref_param.target) == 0:
-                raise Exception(
-                    "this shoud not happen: a reference always has a target"
-                )
+                raise Exception("this shoud not happen: a reference always has a target")
             elif target_ref_type and target_ref_type not in ref_param.target:
                 raise Exception(
                     f"the search param {from_resource_type}.{ref_param_raw} may refer"
@@ -306,9 +319,7 @@ class Search(object):
                 )
 
             # Compute the resources which may be included in the join query
-            included_resources = (
-                [target_ref_type] if target_ref_type else ref_param.target
-            )
+            included_resources = [target_ref_type] if target_ref_type else ref_param.target
 
             # Extract reference IDs from the main query result
             ids = main_query_result.extract_references(ref_param)
@@ -332,8 +343,7 @@ class Search(object):
             builder = builder.limit(default_result_count)
 
             result: QueryResult = builder(
-                unrestricted=self.context.unrestricted,
-                async_result=self.context.async_result,
+                unrestricted=self.context.unrestricted, async_result=self.context.async_result,
             )
             include_queries.append(result)
 
@@ -581,9 +591,7 @@ class Search(object):
 
         raise NotImplementedError
 
-    def single_valued_coding_term(
-        self, path_, value, modifier, ignore_not_modifier=False
-    ):
+    def single_valued_coding_term(self, path_, value, modifier, ignore_not_modifier=False):
         """ """
         operator_, original_value = value
 
@@ -777,9 +785,7 @@ class Search(object):
             assert path_._where.name == "system"
 
             terms = [
-                self.create_term(
-                    path_ / "system", (value[0], path_._where.value), None
-                ),
+                self.create_term(path_ / "system", (value[0], path_._where.value), None),
                 self.create_term(path_ / "value", value, None),
             ]
         else:
@@ -988,9 +994,7 @@ class Search(object):
                 "You cannot use modifier (above,below) and prefix (sa,eb) at a time"
             )
         if modifier == "contains" and operator_ != "eq":
-            raise NotImplementedError(
-                "In case of :contains modifier, only eq prefix is supported"
-            )
+            raise NotImplementedError("In case of :contains modifier, only eq prefix is supported")
 
     def create_term(self, path_, value, modifier):
         """ """
@@ -1140,15 +1144,28 @@ class Search(object):
 
         for param_name in self.search_params:
 
-            if param_name.split(":")[0] not in self.definition:
+            if self.context.resource_name and param_name.split(":")[0] not in self.definition:
                 unwanted.add(param_name)
+            elif (
+                "_type" in self.result_params
+                and param_name.split(":")[0] not in self.allowed_search_params
+            ):
+                unwanted.add(param_name)
+            else:
+                pass
+                # TODO
 
         if len(unwanted) > 0:
+            params = ", ".join([u for u in unwanted])
+            resource = self.context.resource_name
+            if not resource:
+                if "_type" in self.result_params:
+                    resource = ", ".join(self.result_params["_type"])
+                else:
+                    pass
+                    # TODO
             raise ValidationError(
-                "({0}) search parameter(s) are not "
-                "available for resource `{1}`.".format(
-                    ", ".join([u for u in unwanted]), self.context.resource_name
-                )
+                f"({params}) search parameter(s) are not available for resource `{resource}`."
             )
         # xxx: later more
 
@@ -1161,9 +1178,7 @@ class Search(object):
         """
         if modifier in ("missing", "exists"):
             if not isinstance(param_value, tuple):
-                raise ValidationError(
-                    "Multiple values are not allowed for missing(exists) search"
-                )
+                raise ValidationError("Multiple values are not allowed for missing(exists) search")
 
             if not param_value[1] in ("true", "false"):
 
@@ -1181,9 +1196,7 @@ class Search(object):
         if search_param.type == "composite":
             raise NotImplementedError
 
-        if search_param.type in ("token", "composite") and search_param.code.startswith(
-            "combo-"
-        ):
+        if search_param.type in ("token", "composite") and search_param.code.startswith("combo-"):
             raise NotImplementedError
 
         dotted_path = search_param.expression
@@ -1192,6 +1205,19 @@ class Search(object):
             dotted_path = dotted_path[1:-1]
 
         return self._dotted_path_to_path_context(dotted_path)
+
+    def attach_where_terms(self, builder):
+        terms_container = list()
+        # making sure no duplicate keys, important!
+        for param_name in set(self.search_params):
+            normalized_data = self.normalize_param(param_name)
+            if isinstance(normalized_data, tuple):
+                normalized_data = [normalized_data]
+            for nd in normalized_data:
+                self.add_term(nd, terms_container)
+
+        builder = self.attach_from_terms(builder)
+        return builder.where(*terms_container)
 
     def attach_sort_terms(self, builder):
         """ """
@@ -1227,10 +1253,7 @@ class Search(object):
         if "_elements" not in self.result_params:
             return builder
 
-        paths = [
-            f"{self.context.resource_name}.{el}"
-            for el in self.result_params["_elements"]
-        ]
+        paths = [f"{self.context.resource_name}.{el}" for el in self.result_params["_elements"]]
         mandatories = [f"{self.context.resource_name}.id"]
         return builder.select(*paths, *mandatories)
 
@@ -1253,9 +1276,7 @@ class Search(object):
             # TODO should we include all elements except text instead of exluding?
             return builder.exclude(f"{self.context.resource_name}.text")
 
-        spec = lookup_fhir_resource_spec(
-            self.context.resource_name, True, FHIR_VERSION.R4
-        )
+        spec = lookup_fhir_resource_spec(self.context.resource_name, True, FHIR_VERSION.R4)
 
         if self.result_params["_summary"] == "true":
             summary_elements = [
@@ -1266,9 +1287,7 @@ class Search(object):
                 if el.is_summary:
                     if el.path.endswith("[x]"):
                         for prop in el.as_properties():
-                            summary_elements.append(
-                                f"{prop.path.rsplit('.', 1)[0]}.{prop.name}"
-                            )
+                            summary_elements.append(f"{prop.path.rsplit('.', 1)[0]}.{prop.name}")
                     else:
                         summary_elements.append(el.path)
 
