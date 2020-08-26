@@ -1,7 +1,8 @@
 # _*_ coding: utf-8 _*_
 import time
 from abc import ABC
-from collections import deque
+from collections import deque, defaultdict
+from typing import Dict, List
 
 from zope.interface import implementer
 
@@ -13,6 +14,7 @@ from fhirpath.interfaces.engine import (
     IEngineResultHeader,
     IEngineResultRow,
 )
+from fhirpath.fhirspec import SearchParameter
 from fhirpath.query import Query
 from fhirpath.thirdparty import Proxy
 
@@ -71,18 +73,6 @@ class EngineProxy(Proxy):
         self.initialize(obj)
 
 
-@implementer(IEngineResult)
-class EngineResult(object):
-    """ """
-
-    __slot__ = ("header", "body")
-
-    def __init__(self, header, body):
-        """ """
-        object.__setattr__(self, "header", header)
-        object.__setattr__(self, "body", body)
-
-
 @implementer(IEngineResultHeader)
 class EngineResultHeader(object):
     """ """
@@ -116,3 +106,49 @@ class EngineResultBody(deque):
 @implementer(IEngineResultRow)
 class EngineResultRow(list):
     """ """
+
+
+@implementer(IEngineResult)
+class EngineResult(object):
+    """ """
+
+    __slot__ = ("header", "body")
+
+    def __init__(
+        self, header: EngineResultHeader, body: EngineResultBody,
+    ):
+        """ """
+        self.header = header
+        self.body = body
+
+    def extract_references(self, search_param: SearchParameter) -> Dict[str, List[str]]:
+        """Takes a search parameter as input and extract all targeted references
+
+            Returns a dict like:
+            {"Patient": ["list", "of", "referenced", "patient", "ids"], "Observation": []}
+        """
+        assert search_param.type == "reference"
+
+        def browse(node, path):
+            parts = path.split(".", 1)
+            if len(parts) == 1:
+                return node[parts[0]]
+
+            return browse(node[parts[0]], parts[1])
+
+        def append_ref(ref_attr):
+            if "reference" not in ref_attr:
+                raise Exception(f"attribute {ref_attr} is not a Reference")
+            referenced_resource, _id = ref_attr["reference"].split("/")
+            ids[referenced_resource].append(_id)
+
+        ids: Dict = defaultdict(list)
+        resource_type, path = search_param.expression.split(".", 1)
+        for row in self.body:
+            ref_attribute = browse(row[0], path)
+            if isinstance(ref_attribute, list):
+                for r in ref_attribute:
+                    append_ref(r)
+            else:
+                append_ref(ref_attribute)
+        return ids

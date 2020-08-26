@@ -16,7 +16,7 @@ __author__ = "Md Nazrul Islam<email2nazrul@gmail.com>"
 
 def test_params_definition():
     """ """
-    definition = Search.get_parameter_definition(FHIR_VERSION.R4, "Organization")
+    definition = Search.get_parameters_definition(FHIR_VERSION.R4, "Organization")
     assert definition.name.expression == "Organization.name"
 
 

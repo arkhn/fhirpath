@@ -154,19 +154,17 @@ class SearchParameterDefinition(object):
 class SearchParameter(object):
     """ """
 
-    __slots__ = (
-        "name",
-        "code",
-        "expression",
-        "type",
-        "modifier",
-        "comparator",
-        "target",
-        "xpath",
-        "multiple_or",
-        "multiple_and",
-        "component",
-    )
+    name: str
+    code: str
+    expression: str
+    type: str
+    modifier: str
+    comparator: str
+    target: List[str]
+    xpath: str
+    multiple_or: bool
+    multiple_and: bool
+    component: str
 
     @classmethod
     def from_definition(cls, resource_type, definition):

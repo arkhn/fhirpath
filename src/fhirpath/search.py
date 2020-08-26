@@ -1,7 +1,7 @@
 # _*_ coding: utf-8 _*_
 import logging
 import re
-from typing import Dict, Pattern, Set, Text
+from typing import Dict, Pattern, Set, Text, List
 from urllib.parse import unquote_plus
 
 from multidict import MultiDict, MultiDictProxy
@@ -15,7 +15,7 @@ from fhirpath.enums import (
     WhereConstraintType,
 )
 from fhirpath.exceptions import ValidationError, NoResultFound
-from fhirpath.fhirspec import lookup_fhir_resource_spec
+from fhirpath.fhirspec import lookup_fhir_resource_spec, SearchParameter
 from fhirpath.fql import (
     G_,
     T_,
@@ -29,9 +29,10 @@ from fhirpath.fql import (
     sort_,
     exact_,
 )
+from fhirpath.engine import EngineResult
 from fhirpath.fql.types import ElementPath
 from fhirpath.interfaces import IGroupTerm, ISearch, ISearchContext
-from fhirpath.query import Q_
+from fhirpath.query import Q_, QueryResult
 from fhirpath.storage import SEARCH_PARAMETERS_STORAGE
 
 __author__ = "Md Nazrul Islam <email2nazrul@gmail.com>"
@@ -69,10 +70,10 @@ class SearchContext(object):
 
     def __init__(self, engine, resource_type, unrestricted=False, async_result=False):
         """ """
-        object.__setattr__(self, "engine", engine)
-        object.__setattr__(self, "resource_name", resource_type)
-        object.__setattr__(self, "unrestricted", unrestricted)
-        object.__setattr__(self, "async_result", async_result)
+        self.engine = engine
+        self.resource_name = resource_type
+        self.unrestricted = unrestricted
+        self.async_result = async_result
 
 
 @implementer(ISearch)
@@ -85,7 +86,9 @@ class Search(object):
         Search.validate_params(context, query_string, params)
 
         self.context = ISearchContext(context)
-        if query_string:
+        if isinstance(params, MultiDict):
+            pass
+        elif isinstance(query_string, str):
             all_params = Search.parse_query_string(query_string, False)
         elif isinstance(params, (tuple, list)):
             all_params = MultiDict(params)
@@ -99,13 +102,14 @@ class Search(object):
         self.result_params: Dict = dict()
         self.search_params = None
 
+        self.main_query = None
+        self.include_queries = None
+
         self.prepare_params(all_params)
 
-        # self.definition = Search.get_parameter_definition(
-        #     self.context.engine.fhir_release, self.context.resource_name
-        # )
-        self.definition = Search.get_parameter_definition(
-            self.context.engine.fhir_release, "Patient"
+        # FIXME: does not work when searching on multiple types with _type
+        self.definition = Search.get_parameters_definition(
+            self.context.engine.fhir_release, self.context.resource_name
         )
 
     @staticmethod
@@ -175,7 +179,7 @@ class Search(object):
         if _elements:
             self.result_params["_elements"] = _elements.split(",")
 
-        _include = all_params.popone("_include", None)
+        _include = all_params.popall("_include", None)
         if _include:
             self.result_params["_include"] = _include
 
@@ -225,7 +229,7 @@ class Search(object):
         return cls(context, params=params)
 
     @staticmethod
-    def get_parameter_definition(fhir_release: FHIR_VERSION, resource_name: str):
+    def get_parameters_definition(fhir_release: FHIR_VERSION, resource_name: str):
         """ """
         fhir_release = FHIR_VERSION.normalize(fhir_release)
         storage = SEARCH_PARAMETERS_STORAGE.get(fhir_release.name)
@@ -260,11 +264,80 @@ class Search(object):
         builder = self.attach_sort_terms(builder)
         builder = self.attach_limit_terms(builder)
 
-        result = builder(
+        result: QueryResult = builder(
             unrestricted=self.context.unrestricted,
             async_result=self.context.async_result,
         )
+
         return result
+
+    def include(self, main_query_result: EngineResult) -> List[QueryResult]:
+        """
+        This function handles the _include keyword.
+
+        """
+        include_queries: List[QueryResult] = []
+        for inc in self.result_params.get("_include", []):
+            # Parse the _include input parameter
+            parts = inc.split(":")
+            if len(parts) < 2 or len(parts) > 3:
+                raise Exception(f"bad _include param {inc}")
+
+            from_resource_type = parts[0]
+            ref_param_raw: str = parts[1]
+            target_ref_type = parts[2] if len(parts) == 3 else None
+
+            # Get the reference parameter definition
+            from_context = SearchContext(self.context.engine, from_resource_type)
+            from_definition = Search.get_parameters_definition(
+                self.context.engine.fhir_release, from_context.resource_name
+            )
+            ref_param: SearchParameter = getattr(from_definition, ref_param_raw, None)
+            if ref_param.type != "reference":
+                raise Exception("rly ? go fuck yourself")
+            elif len(ref_param.target) == 0:
+                raise Exception(
+                    "this shoud not happen: a reference always has a target"
+                )
+            elif target_ref_type and target_ref_type not in ref_param.target:
+                raise Exception(
+                    f"the search param {from_resource_type}.{ref_param_raw} may refer"
+                    f" to {', '.join(ref_param.target)}, not to {target_ref_type}"
+                )
+
+            # Compute the resources which may be included in the join query
+            included_resources = (
+                [target_ref_type] if target_ref_type else ref_param.target
+            )
+
+            # Extract reference IDs from the main query result
+            ids = main_query_result.extract_references(ref_param)
+
+            # filter included resources for which we have references to
+            included_resources = [r for r in included_resources if ids.get(r)]
+
+            # Build a Q_ (query) object to join the resource based on reference ids.
+            builder = Q_(included_resources, self.context.engine)
+            terms: List = []
+            for resource_type in included_resources:
+                # for each resource, create a term to filter IDs
+                term = self.create_term(
+                    self._dotted_path_to_path_context(f"{resource_type}.id"),
+                    ("eq", " ".join(ids[resource_type])),
+                    None,
+                )
+                terms.append(term)
+
+            builder = builder.where(*terms)
+            builder = builder.limit(default_result_count)
+
+            result: QueryResult = builder(
+                unrestricted=self.context.unrestricted,
+                async_result=self.context.async_result,
+            )
+            include_queries.append(result)
+
+        return include_queries
 
     def add_term(self, normalized_data, terms_container):
         """ """
@@ -987,6 +1060,9 @@ class Search(object):
             g_term = G_(*terms, path=path_, type_=GroupType.COUPLED)
             return g_term
 
+        else:
+            raise NotImplementedError
+
     def normalize_param_value(self, raw_value, container):
         """ """
         if isinstance(raw_value, list):
@@ -1210,12 +1286,12 @@ class Search(object):
             ]
             return builder.select(*text_elements)
 
-    def response(self, result):
+    def response(self, result, includes):
         """ """
         if result.header.total == 0:
             raise NoResultFound
 
-        return self.context.engine.wrapped_with_bundle(result)
+        return self.context.engine.wrapped_with_bundle(result, includes)
 
     def _get_search_param_definition(self, param_name):
         """ """
@@ -1284,14 +1360,26 @@ class Search(object):
 
     def __call__(self):
         """ """
-        query_result = self.build()
-        if self.result_params.get("_summary") == "count":
-            result = query_result.count()
-        else:
-            result = query_result.fetchall()
 
-        assert result is not None
-        response = self.response(result)
+        # TODO: chaining
+        # TODO: reverse chaining (_has)
+
+        # MAIN QUERY
+        self.main_query = self.build()
+        # TODO handle count with _includes
+        if self.result_params.get("_summary") == "count":
+            main_result = self.main_query.count()
+        else:
+            main_result = self.main_query.fetchall()
+
+        # _include
+        self.include_queries = self.include(main_result)
+        include_results: List[EngineResult] = []
+        for q in self.include_queries:
+            include_results.append(q.fetchall())
+
+        assert main_result is not None
+        response = self.response(main_result, include_results)
 
         return response
 

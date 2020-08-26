@@ -58,9 +58,6 @@ class ElasticSearchDialect(DialectBase):
     def apply_nested(query, dotted_path):
         """ """
 
-        # FIXME: remove resource_type from path eg (Observation.active => active)
-        # dotted_path = dotted_path.split(".", 1)[1]
-
         wrapper = {
             "nested": {
                 "path": dotted_path,
@@ -152,8 +149,6 @@ class ElasticSearchDialect(DialectBase):
     @staticmethod
     def create_contains_term(path, value):
         """Create ES Regex Query"""
-        # FIXME: remove resource_type from path eg (Observation.active => active)
-        # path = path.split(".", 1)[1]
 
         if isinstance(value, (list, tuple)):
             if len(value) == 1:
@@ -173,8 +168,6 @@ class ElasticSearchDialect(DialectBase):
     @staticmethod
     def create_eb_term(path, value):
         """Create ES Prefix Query"""
-        # FIXME: remove resource_type from path eg (Observation.active => active)
-        # path = path.split(".", 1)[1]
 
         if isinstance(value, (list, tuple)):
             if len(value) == 1:
@@ -249,7 +242,9 @@ class ElasticSearchDialect(DialectBase):
             else:
                 return info_
 
-    def compile_for_single_resource_type(self, query, resource_type, mapping=None, root_replacer=None):
+    def compile_for_single_resource_type(
+        self, query, resource_type, mapping=None, root_replacer=None
+    ):
         """
         :param: query
 
@@ -259,8 +254,11 @@ class ElasticSearchDialect(DialectBase):
             Could be mapping name or index name in zope´s ZCatalog context
         """
         body_structure = ElasticSearchDialect.create_structure()
-        conditional_terms = query.get_where()
-
+        conditional_terms = [
+            w
+            for w in query.get_where()
+            if w.path.context.resource_type == resource_type
+        ]
         for term in conditional_terms:
             """ """
             q, unary_operator = self.resolve_term(term, mapping, root_replacer)
@@ -287,7 +285,7 @@ class ElasticSearchDialect(DialectBase):
         # ElasticSearchDialect.apply_from_constraint(
         #     query, body_structure, root_replacer=root_replacer
         # )
-        path_ = "{0}.resourceType".format(root_replacer or resource_type)
+        path_ = f"{root_replacer or resource_type}.resourceType"
         term = {"match": {path_: resource_type}}
         body_structure["query"]["bool"]["filter"].append(term)
         # Sorting
@@ -320,14 +318,20 @@ class ElasticSearchDialect(DialectBase):
 
             query_fragments.append(
                 self.compile_for_single_resource_type(
-                    query, resource_type=resource_type, mapping=mapping, root_replacer=field_index_name
+                    query,
+                    resource_type=resource_type,
+                    mapping=mapping,
+                    root_replacer=field_index_name,
                 )
             )
 
         if len(query_fragments) > 1:
             return {
                 "query": {
-                    "bool": {"should": [frag["query"] for frag in query_fragments]}
+                    "bool": {
+                        "should": [frag["query"] for frag in query_fragments],
+                        "minimum_should_match": 1,
+                    }
                 }
             }
         else:
@@ -617,7 +621,8 @@ class ElasticSearchDialect(DialectBase):
                     }
                 }
             else:
-                qr = {"match": {path_: {"query": value, "fuzziness": "AUTO"}}}
+                # FIXME: should we add automatic fuzziness ? "fuzziness": "AUTO"
+                qr = {"match": {path_: {"query": value}}}
 
         else:
             qr = ElasticSearchDialect.create_term(

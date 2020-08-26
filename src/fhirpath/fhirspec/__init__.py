@@ -10,7 +10,7 @@ from fhirspec import Configuration, FHIRStructureDefinition
 from fhirpath.enums import FHIR_VERSION
 from fhirpath.storage import FHIR_RESOURCE_SPEC_STORAGE, SEARCH_PARAMETERS_STORAGE
 
-from .spec import FHIRSearchSpec  # noqa: F401
+from .spec import FHIRSearchSpec, SearchParameter  # noqa: F401
 from .spec import logger
 
 __author__ = "Md Nazrul Islam<email2nazrul@gmail.com>"

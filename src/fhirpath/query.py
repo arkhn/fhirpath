@@ -217,17 +217,14 @@ class QueryBuilder(ABC):
         return newone
 
     @builder
-    def from_(self, resource_types: List[str], alias: Optional[str] = None):
+    def from_(self, resource_types: List[str]):
         """ """
         required_not_finalized(self)
 
-        if len(self._from) > 0:
-            raise ValidationError("from_ value already assigned!")
         assert self._engine
         for resource_type in resource_types:
             model = Model.create(resource_type, fhir_release=self._engine.fhir_release)
-            alias = alias or model.__name__  # xxx: model.get_resource_type()
-            self._from.append((alias, model))
+            self._from.append((resource_type, model))
 
     @builder
     def select(self, *args):
