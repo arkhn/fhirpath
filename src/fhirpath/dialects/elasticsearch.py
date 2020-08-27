@@ -78,6 +78,10 @@ class ElasticSearchDialect(DialectBase):
         path_context = context
         qr = query_
 
+        if path_context.resource_type == "Resource":
+            # FIXME ugly: no nested query if we search on all types
+            return qr
+
         while True:
             if path_context.multiple and not path_context.type_is_primitive:
                 path_ = ElasticSearchDialect.apply_path_replacement(
@@ -109,7 +113,7 @@ class ElasticSearchDialect(DialectBase):
         return sort_sub_query
 
     @staticmethod
-    def create_term(path, value, multiple=False, match_type=None):
+    def create_term(path, value, multiple=False, match_type=None, all_resources=False):
         """Create ES Query term"""
         multiple_ = isinstance(value, (list, tuple)) or multiple is True
         if multiple_ is True and not isinstance(value, (list, tuple)):
@@ -119,6 +123,8 @@ class ElasticSearchDialect(DialectBase):
             q = {"terms": {path: value}}
         elif match_type == TermMatchType.EXACT:
             q = {"term": {f"{path}.raw": value}}
+        elif all_resources:
+            q = {"multi_match": {"query": value, "fields": [path]}}
         else:
             q = {"match": {path: value}}
 
@@ -272,13 +278,11 @@ class ElasticSearchDialect(DialectBase):
             container.append(q)
 
         # ResourceType bind
-        # TODO put that back in method
-        # ElasticSearchDialect.apply_from_constraint(
-        #     query, body_structure, root_replacer=root_replacer
-        # )
-        path_ = f"{root_replacer or resource_type}.resourceType"
-        term = {"match": {path_: resource_type}}
-        body_structure["query"]["bool"]["filter"].append(term)
+        if resource_type != "Resource":
+            ElasticSearchDialect.apply_from_constraint(
+                query, body_structure, resource_type, root_replacer=root_replacer
+            )
+
         # Sorting
         ElasticSearchDialect.apply_sort(
             query.get_sort(), body_structure, root_replacer=root_replacer
@@ -313,8 +317,13 @@ class ElasticSearchDialect(DialectBase):
                     root_replacer=field_index_name,
                 )
             )
-
-        if len(query_fragments) > 1:
+        if len(query_fragments) == 0:
+            # Search on all types
+            # TODO mapping for all resources?
+            return self.compile_for_single_resource_type(
+                query, resource_type="Resource", mapping=None, root_replacer="*",
+            )
+        elif len(query_fragments) > 1:
             return {
                 "query": {
                     "bool": {
@@ -409,9 +418,14 @@ class ElasticSearchDialect(DialectBase):
                     dotted_path = ElasticSearchDialect.create_dotted_path(term, root_replacer)
                     value = term.get_real_value()
 
-                    map_info = ElasticSearchDialect.get_path_mapping_info(mapping, dotted_path)
+                    # FIXME when searching on all resources, we don't have the mapping
+                    map_info = (
+                        ElasticSearchDialect.get_path_mapping_info(mapping, dotted_path)
+                        if mapping
+                        else None
+                    )
 
-                    if map_info.get("type", None) == "text":
+                    if map_info and map_info.get("type", None) == "text":
                         resolved = ElasticSearchDialect.resolve_string_term(
                             term, map_info, root_replacer
                         )
@@ -424,8 +438,14 @@ class ElasticSearchDialect(DialectBase):
                         elif term.comparison_operator == OPERATOR.contains:
                             q = ElasticSearchDialect.create_contains_term(dotted_path, value)
                         else:
+                            # If root_replacer is "*", we're searching on all resources
+                            all_resources = root_replacer == "*"
                             q = ElasticSearchDialect.create_term(
-                                dotted_path, value, multiple=multiple, match_type=term.match_type,
+                                dotted_path,
+                                value,
+                                multiple=multiple,
+                                match_type=term.match_type,
+                                all_resources=all_resources,
                             )
                         resolved = q, term.unary_operator
 
@@ -666,12 +686,11 @@ class ElasticSearchDialect(DialectBase):
             body_structure["sort"].append(item)
 
     @staticmethod
-    def apply_from_constraint(query, body_structure, root_replacer=None):
+    def apply_from_constraint(query, body_structure, resource_type, root_replacer=None):
         """We force apply resource type boundary"""
-        for res_name, _res_klass in query.get_from():
-            path_ = "{0}.resourceType".format(root_replacer or res_name)
-            term = {"match": {path_: res_name}}
-            body_structure["query"]["bool"]["filter"].append(term)
+        path_ = f"{root_replacer or resource_type}.resourceType"
+        term = {"match": {path_: resource_type}}
+        body_structure["query"]["bool"]["filter"].append(term)
 
     @staticmethod
     def apply_source_filter(query, body_structure, root_replacer=None):

@@ -13,7 +13,7 @@ from fhirpath.utils import FHIR_VERSION, builder
 
 from .constraints import (
     required_finalized,
-    required_from_resource,
+    # required_from_resource,
     required_not_finalized,
 )
 from .exceptions import MultipleResultsFound
@@ -77,9 +77,7 @@ class Query(ABC):
         """Create Query object from QueryBuilder.
         Kind of reverse process"""
         if not IQueryBuilder(builder)._finalized:
-            raise ConstraintNotSatisfied(
-                "QueryBuilder object must be in finalized state"
-            )
+            raise ConstraintNotSatisfied("QueryBuilder object must be in finalized state")
         query = cls(
             builder._engine.fhir_release,  # type: ignore
             builder._from,  # type: ignore
@@ -174,9 +172,7 @@ class QueryBuilder(ABC):
 
         if self._engine is None:
             raise ConstraintNotSatisfied(
-                "Object from '{0!s}' must be binded with engine".format(
-                    self.__class__.__name__
-                )
+                "Object from '{0!s}' must be binded with engine".format(self.__class__.__name__)
             )
         # xxx: do any validation?
         if len(self._select) == 0:
@@ -324,14 +320,13 @@ class QueryBuilder(ABC):
             result_factory = AsyncQueryResult
         if TYPE_CHECKING:
             assert self._engine
-        result = result_factory(
-            query=query, engine=self._engine, unrestricted=unrestricted
-        )
+        result = result_factory(query=query, engine=self._engine, unrestricted=unrestricted)
         return result
 
     def _pre_check(self):
         """ """
-        required_from_resource(self)
+        # TODO can we modify this check somehow?
+        # required_from_resource(self)
         required_not_finalized(self)
 
     def _validate(self):
@@ -342,16 +337,17 @@ class QueryBuilder(ABC):
 
     def _validate_root_path(self, path_string: str):
         """ """
-        match = False
-        for alias, _model in self._from:
-            if path_string.split(".")[0] == alias:
-                match = True
-                break
-        if match is False:
+        root_path = path_string.split(".")[0]
+
+        if self._from:
+            match = any(alias == root_path for alias, _ in self._from)
+        else:
+            # FIXME ugly
+            match = root_path == "Resource"
+
+        if not match:
             raise ValidationError(
-                "Root path '{0!s}' must be matched with from models".format(
-                    path_string.split(".")[0]
-                )
+                "Root path '{0!s}' must be matched with from models".format(root_path)
             )
 
     def _validate_term_path(self, term):
@@ -429,9 +425,7 @@ class QueryResult(ABC):
         """Returns a collection with a single value which is the integer count of
         the number of items in the input collection.
         Returns 0 when the input collection is empty."""
-        result = self._engine.execute(
-            self._query, self._unrestricted, EngineQueryType.COUNT
-        )
+        result = self._engine.execute(self._query, self._unrestricted, EngineQueryType.COUNT)
         # return result.header.total
         return result
 
@@ -544,9 +538,7 @@ class AsyncQueryResult(QueryResult):
 
     async def count(self):
         """ """
-        result = await self._engine.execute(
-            self._query, self._unrestricted, EngineQueryType.COUNT
-        )
+        result = await self._engine.execute(self._query, self._unrestricted, EngineQueryType.COUNT)
         return result.header.total
 
     async def empty(self):

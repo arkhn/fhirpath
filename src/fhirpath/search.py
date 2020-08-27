@@ -115,9 +115,7 @@ class Search(object):
         elif "_type" in self.result_params:
             types = self.result_params["_type"]
             all_definitions = [
-                Search.get_parameters_definition(
-                    self.context.engine.fhir_release, resource_name
-                )
+                Search.get_parameters_definition(self.context.engine.fhir_release, resource_name)
                 for resource_name in types
             ]
             self.allowed_search_params = {
@@ -126,8 +124,10 @@ class Search(object):
                 if all(k in definition for definition in all_definitions)
             }
         else:
-            # TODO definitions for search params common to all resources
-            pass
+            # resource_name = "Resource" gives all common search parameters
+            self.definition = Search.get_parameters_definition(
+                self.context.engine.fhir_release, "Resource"
+            )
 
     @staticmethod
     def validate_params(context, query_string, params):
@@ -268,14 +268,14 @@ class Search(object):
         if self.context.resource_name:
             builder = self.attach_where_terms(builder)
         elif "_type" in self.result_params:
+            builder = self.attach_from_terms(builder)
             for resource_name in self.result_params["_type"]:
                 self.definition = Search.get_parameters_definition(
                     self.context.engine.fhir_release, resource_name
                 )
                 builder = self.attach_where_terms(builder)
         else:
-            pass
-            # TODO
+            builder = self.attach_where_terms(builder)
 
         builder = self.attach_select_terms(builder)
         builder = self.attach_summary_terms(builder)
@@ -283,8 +283,7 @@ class Search(object):
         builder = self.attach_limit_terms(builder)
 
         result: QueryResult = builder(
-            unrestricted=self.context.unrestricted,
-            async_result=self.context.async_result,
+            unrestricted=self.context.unrestricted, async_result=self.context.async_result,
         )
 
         return result
@@ -329,9 +328,7 @@ class Search(object):
                 )
 
             # Compute the resources which may be included in the join query
-            included_resources = (
-                [target_ref_type] if target_ref_type else ref_param.target
-            )
+            included_resources = [target_ref_type] if target_ref_type else ref_param.target
 
             # Extract reference IDs from the main query result
             ids = main_query_result.extract_references(ref_param)
@@ -355,8 +352,7 @@ class Search(object):
             builder = builder.limit(default_result_count)
 
             result: QueryResult = builder(
-                unrestricted=self.context.unrestricted,
-                async_result=self.context.async_result,
+                unrestricted=self.context.unrestricted, async_result=self.context.async_result,
             )
             include_queries.append(result)
 
@@ -604,9 +600,7 @@ class Search(object):
 
         raise NotImplementedError
 
-    def single_valued_coding_term(
-        self, path_, value, modifier, ignore_not_modifier=False
-    ):
+    def single_valued_coding_term(self, path_, value, modifier, ignore_not_modifier=False):
         """ """
         operator_, original_value = value
 
@@ -800,9 +794,7 @@ class Search(object):
             assert path_._where.name == "system"
 
             terms = [
-                self.create_term(
-                    path_ / "system", (value[0], path_._where.value), None
-                ),
+                self.create_term(path_ / "system", (value[0], path_._where.value), None),
                 self.create_term(path_ / "value", value, None),
             ]
         else:
@@ -1011,9 +1003,7 @@ class Search(object):
                 "You cannot use modifier (above,below) and prefix (sa,eb) at a time"
             )
         if modifier == "contains" and operator_ != "eq":
-            raise NotImplementedError(
-                "In case of :contains modifier, only eq prefix is supported"
-            )
+            raise NotImplementedError("In case of :contains modifier, only eq prefix is supported")
 
     def create_term(self, path_, value, modifier):
         """ """
@@ -1163,19 +1153,11 @@ class Search(object):
 
         for param_name in self.search_params:
 
-            if (
-                self.context.resource_name
-                and param_name.split(":")[0] not in self.definition
-            ):
+            if "_type" in self.result_params:
+                if param_name.split(":")[0] not in self.allowed_search_params:
+                    unwanted.add(param_name)
+            elif param_name.split(":")[0] not in self.definition:
                 unwanted.add(param_name)
-            elif (
-                "_type" in self.result_params
-                and param_name.split(":")[0] not in self.allowed_search_params
-            ):
-                unwanted.add(param_name)
-            else:
-                pass
-                # TODO
 
         if len(unwanted) > 0:
             params = ", ".join([u for u in unwanted])
@@ -1200,9 +1182,7 @@ class Search(object):
         """
         if modifier in ("missing", "exists"):
             if not isinstance(param_value, tuple):
-                raise ValidationError(
-                    "Multiple values are not allowed for missing(exists) search"
-                )
+                raise ValidationError("Multiple values are not allowed for missing(exists) search")
 
             if not param_value[1] in ("true", "false"):
 
@@ -1220,9 +1200,7 @@ class Search(object):
         if search_param.type == "composite":
             raise NotImplementedError
 
-        if search_param.type in ("token", "composite") and search_param.code.startswith(
-            "combo-"
-        ):
+        if search_param.type in ("token", "composite") and search_param.code.startswith("combo-"):
             raise NotImplementedError
 
         dotted_path = search_param.expression
@@ -1242,7 +1220,6 @@ class Search(object):
             for nd in normalized_data:
                 self.add_term(nd, terms_container)
 
-        builder = self.attach_from_terms(builder)
         return builder.where(*terms_container)
 
     def attach_sort_terms(self, builder):
@@ -1279,10 +1256,7 @@ class Search(object):
         if "_elements" not in self.result_params:
             return builder
 
-        paths = [
-            f"{self.context.resource_name}.{el}"
-            for el in self.result_params["_elements"]
-        ]
+        paths = [f"{self.context.resource_name}.{el}" for el in self.result_params["_elements"]]
         mandatories = [f"{self.context.resource_name}.id"]
         return builder.select(*paths, *mandatories)
 
@@ -1305,9 +1279,7 @@ class Search(object):
             # TODO should we include all elements except text instead of exluding?
             return builder.exclude(f"{self.context.resource_name}.text")
 
-        spec = lookup_fhir_resource_spec(
-            self.context.resource_name, True, FHIR_VERSION.R4
-        )
+        spec = lookup_fhir_resource_spec(self.context.resource_name, True, FHIR_VERSION.R4)
 
         if self.result_params["_summary"] == "true":
             summary_elements = [
@@ -1318,9 +1290,7 @@ class Search(object):
                 if el.is_summary:
                     if el.path.endswith("[x]"):
                         for prop in el.as_properties():
-                            summary_elements.append(
-                                f"{prop.path.rsplit('.', 1)[0]}.{prop.name}"
-                            )
+                            summary_elements.append(f"{prop.path.rsplit('.', 1)[0]}.{prop.name}")
                     else:
                         summary_elements.append(el.path)
 
