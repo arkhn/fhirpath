@@ -1318,7 +1318,7 @@ class Search(object):
         if search_param is None:
             raise ValidationError(
                 "No search definition is available for search parameter "
-                f"``{param_name}`` on Resource ``{self.context.resource_name}``."
+                f"``{param_name}`` on Resource ``{self.definition.resource_type}``."
             )
         return search_param
 
