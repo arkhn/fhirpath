@@ -1,7 +1,7 @@
 # _*_ coding: utf-8 _*_
 import logging
 import re
-from typing import Dict, Pattern, Set, Text, List
+from typing import Dict, Pattern, Set, Text, List, Optional, Tuple
 from urllib.parse import unquote_plus
 
 from multidict import MultiDict, MultiDictProxy
@@ -15,7 +15,11 @@ from fhirpath.enums import (
     WhereConstraintType,
 )
 from fhirpath.exceptions import ValidationError
-from fhirpath.fhirspec import lookup_fhir_resource_spec, SearchParameter
+from fhirpath.fhirspec import (
+    lookup_fhir_resource_spec,
+    SearchParameter,
+    ResourceSearchParameterDefinition,
+)
 from fhirpath.fql import (
     G_,
     T_,
@@ -66,14 +70,217 @@ def has_escape_comma(val):
 class SearchContext(object):
     """ """
 
-    __slots__ = ("resource_name", "engine", "unrestricted", "async_result")
+    __slots__ = (
+        "resource_types",
+        "engine",
+        "unrestricted",
+        "async_result",
+        "definitions",
+        "search_params_intersection",
+    )
+
+    definitions: List[ResourceSearchParameterDefinition]
 
     def __init__(self, engine, resource_type, unrestricted=False, async_result=False):
         """ """
         self.engine = engine
-        self.resource_name = resource_type
+        self.resource_types = [resource_type]
         self.unrestricted = unrestricted
         self.async_result = async_result
+
+        if resource_type is None:
+            self.resource_types = []
+            # "Resource" gives all common search parameters
+            self.definitions = [
+                Search.get_parameters_definition(self.engine.fhir_release, "Resource")
+            ]
+
+        else:
+            self.definitions = [
+                Search.get_parameters_definition(
+                    self.engine.fhir_release, resource_type
+                )
+            ]
+
+    def augment_with_types(self, resource_types: List[str]):
+        if len(resource_types) == 0:
+            return
+
+        self.resource_types.extend(resource_types)
+        self.definitions = [
+            Search.get_parameters_definition(self.engine.fhir_release, t)
+            for t in resource_types
+        ]
+        self.search_params_intersection = [
+            sp for sp in self.definitions[0] if all(sp in d for d in self.definitions)
+        ]
+
+    def resolve_path_context(self, search_param: SearchParameter):
+        """ """
+        if search_param.expression is None:
+            raise NotImplementedError
+
+        # Some Safegurds
+        if search_param.type == "composite":
+            raise NotImplementedError
+
+        if search_param.type in ("token", "composite") and search_param.code.startswith(
+            "combo-"
+        ):
+            raise NotImplementedError
+
+        dotted_path = search_param.expression
+
+        if parentheses_wrapped.match(dotted_path):
+            dotted_path = dotted_path[1:-1]
+
+        return self._dotted_path_to_path_context(dotted_path)
+
+    def normalize_param(
+        self, param_name, raw_value
+    ) -> List[Tuple[ElementPath, str, Optional[str]]]:
+        """ """
+        try:
+            parts = param_name.split(":")
+            param_name_ = parts[0]
+            modifier_ = parts[1]
+        except IndexError:
+            modifier_ = None
+
+        normalized_params: List[Tuple[ElementPath, str, Optional[str]]] = []
+        search_params_def = self._get_search_param_definitions(param_name_)
+        for sp in search_params_def:
+            # Look out for any composite or combo type parameter
+            if sp.type == "composite":
+                normalized_params.append(
+                    self._normalize_composite_param(
+                        raw_value, param_def=sp, modifier=modifier_
+                    )
+                )
+
+            if len(raw_value) == 0:
+                raw_value = None
+            elif len(raw_value) == 1:
+                raw_value = raw_value[0]
+
+            values: List = list()
+            self.normalize_param_value(raw_value, values)
+
+            if len(values) == 1:
+                param_value_ = values[0]
+            else:
+                param_value_ = values
+
+            Search.validate_normalized_value(param_name_, param_value_, modifier_)
+            _path = self.resolve_path_context(sp)
+            normalized_params.append((_path, param_value_, modifier_))
+        return normalized_params
+
+    def normalize_param_value(self, raw_value, container):
+        """ """
+        if isinstance(raw_value, list):
+            bucket = list()
+            for rv in raw_value:
+                self.normalize_param_value(rv, bucket)
+            if len(bucket) == 1:
+                container.append(bucket[0])
+            else:
+                container.append(bucket)
+
+        else:
+            escape_ = has_escape_comma(raw_value)
+            if escape_:
+                param_value = raw_value.replace("\\,", escape_comma_replacer)
+            else:
+                param_value = raw_value
+
+            value_parts = param_value.split(",")
+            comparison_operator = "eq"
+            bucket_ = list()
+            for val in value_parts:
+                if escape_:
+                    val_ = val.replace(escape_comma_replacer, "\\,")
+                else:
+                    val_ = val
+
+                for prefix in value_prefixes:
+                    if val_.startswith(prefix):
+                        comparison_operator = prefix
+                        val_ = val_[2:]
+                        break
+                bucket_.append((comparison_operator, val_))
+            if len(bucket_) == 1:
+                container.append(bucket_[0])
+            else:
+                container.append((None, bucket_))
+
+    def _get_search_param_definitions(self, param_name) -> List[SearchParameter]:
+        """ """
+        params_def = []
+        for definition in self.definitions:
+            search_param = getattr(definition, param_name, None)
+            if search_param is None:
+                raise ValidationError(
+                    "No search definition is available for search parameter "
+                    f"``{param_name}`` on Resource ``{definition.resource_type}``."
+                )
+            params_def.append(search_param)
+        return params_def
+
+    def _dotted_path_to_path_context(self, dotted_path):
+        """ """
+        if len(dotted_path.split(".")) == 1:
+            raise ValidationError("Invalid dotted path ´{0}´".format(dotted_path))
+
+        path_ = ElementPath.from_el_path(dotted_path)
+        path_.finalize(self.engine)
+        return path_
+
+    def _normalize_composite_param(self, raw_value, param_def, modifier):
+        """ """
+        if len(raw_value) < 1:
+            raise NotImplementedError(
+                "Currently duplicate composite type params are not allowed or supported"
+            )
+        value_parts = raw_value[0].split("&")
+        assert len(value_parts) == 2
+
+        composite_bucket = list()
+
+        part1 = [
+            ".".join([param_def.expression, param_def.component[0]["expression"]]),
+            value_parts[0],
+        ]
+        part1_param_value = list()
+        self.normalize_param_value(part1[1], part1_param_value)
+        if len(part1_param_value) == 1:
+            part1_param_value = part1_param_value[0]
+        composite_bucket.append(
+            (self._dotted_path_to_path_context(part1[0]), part1_param_value, modifier)
+        )
+        part2 = list()
+        for expr in param_def.component[1]["expression"].split("|"):
+            part_ = [
+                ".".join([param_def.expression, expr.strip()]),
+                value_parts[1],
+            ]
+            part2.append(part_)
+        part2_param_value = list()
+        self.normalize_param_value(part2[0][1], part2_param_value)
+
+        if len(part2_param_value) == 1:
+            part2_param_value = part2_param_value[0]
+        part2_temp = list()
+        for pr in part2:
+            part2_temp.append(
+                (self._dotted_path_to_path_context(pr[0]), part2_param_value, modifier)
+            )
+        if len(part2_temp) == 1:
+            part2_temp = part2_temp[0]
+
+        composite_bucket.append(part2_temp)
+
+        return composite_bucket
 
 
 @implementer(ISearch)
@@ -107,27 +314,9 @@ class Search(object):
 
         self.prepare_params(all_params)
 
-        # FIXME: does not work when searching on multiple types with _type
-        if self.context.resource_name:
-            self.definition = Search.get_parameters_definition(
-                self.context.engine.fhir_release, self.context.resource_name
-            )
-        elif "_type" in self.result_params:
-            types = self.result_params["_type"]
-            all_definitions = [
-                Search.get_parameters_definition(self.context.engine.fhir_release, resource_name)
-                for resource_name in types
-            ]
-            self.allowed_search_params = {
-                k
-                for k in all_definitions[0]
-                if all(k in definition for definition in all_definitions)
-            }
-        else:
-            # resource_name = "Resource" gives all common search parameters
-            self.definition = Search.get_parameters_definition(
-                self.context.engine.fhir_release, "Resource"
-            )
+        additional_resource_types = self.result_params.get("_type")
+        if additional_resource_types:
+            self.context.augment_with_types(additional_resource_types)
 
     @staticmethod
     def validate_params(context, query_string, params):
@@ -200,6 +389,11 @@ class Search(object):
         if _include:
             self.result_params["_include"] = _include
 
+        _has = [(k, v) for k, v in all_params.items() if k.startswith("_has:")]
+        if _has:
+            self.result_params["_has"] = _has
+        [all_params.pop(k) for k, _ in _has]
+
         _revinclude = all_params.popone("_revinclude", None)
         if _revinclude:
             self.result_params["_revinclude"] = _revinclude
@@ -246,7 +440,7 @@ class Search(object):
         return cls(context, params=params)
 
     @staticmethod
-    def get_parameters_definition(fhir_release: FHIR_VERSION, resource_name: str):
+    def get_parameters_definition(fhir_release: FHIR_VERSION, resource_type: str):
         """ """
         fhir_release = FHIR_VERSION.normalize(fhir_release)
         storage = SEARCH_PARAMETERS_STORAGE.get(fhir_release.name)
@@ -258,32 +452,21 @@ class Search(object):
             spec = FHIRSearchSpecFactory.from_release(fhir_release.name)
             spec.write()
 
-        return storage.get(resource_name)
+        return storage.get(resource_type)
 
     def build(self):
         """Create QueryBuilder from search query string"""
-        resources = [self.context.resource_name] if self.context.resource_name else []
-        builder = Q_(resources, self.context.engine)
+        builder = Q_(self.context.resource_types, self.context.engine)
 
-        if self.context.resource_name:
-            builder = self.attach_where_terms(builder)
-        elif "_type" in self.result_params:
-            builder = self.attach_from_terms(builder)
-            for resource_name in self.result_params["_type"]:
-                self.definition = Search.get_parameters_definition(
-                    self.context.engine.fhir_release, resource_name
-                )
-                builder = self.attach_where_terms(builder)
-        else:
-            builder = self.attach_where_terms(builder)
-
+        builder = self.attach_where_terms(builder)
         builder = self.attach_select_terms(builder)
         builder = self.attach_summary_terms(builder)
         builder = self.attach_sort_terms(builder)
         builder = self.attach_limit_terms(builder)
 
         result: QueryResult = builder(
-            unrestricted=self.context.unrestricted, async_result=self.context.async_result,
+            unrestricted=self.context.unrestricted,
+            async_result=self.context.async_result,
         )
 
         return result
@@ -307,11 +490,9 @@ class Search(object):
 
             # Get the search parameter definition
             # it must be of type reference
-            from_context = SearchContext(self.context.engine, from_resource_type)
-            from_definition = Search.get_parameters_definition(
-                self.context.engine.fhir_release, from_context.resource_name
-            )
-            ref_param: SearchParameter = getattr(from_definition, ref_param_raw, None)
+            ref_param: SearchParameter = SearchContext(
+                self.context.engine, from_resource_type
+            )._get_search_param_definitions(ref_param_raw)[0]
             if not ref_param:
                 raise ValidationError(
                     f"search parameter {from_resource_type}.{ref_param_raw} is unknown"
@@ -328,7 +509,9 @@ class Search(object):
                 )
 
             # Compute the resources which may be included in the join query
-            included_resources = [target_ref_type] if target_ref_type else ref_param.target
+            included_resources = (
+                [target_ref_type] if target_ref_type else ref_param.target
+            )
 
             # Extract reference IDs from the main query result
             ids = main_query_result.extract_references(ref_param)
@@ -340,19 +523,19 @@ class Search(object):
             builder = Q_(included_resources, self.context.engine)
             terms: List = []
             for resource_type in included_resources:
+                search_context = SearchContext(self.context.engine, resource_type)
                 # for each resource, create a term to filter IDs
-                term = self.create_term(
-                    self._dotted_path_to_path_context(f"{resource_type}.id"),
-                    ("eq", " ".join(ids[resource_type])),
-                    None,
+                normalized_data = search_context.normalize_param(
+                    "_id", ",".join(ids[resource_type])
                 )
-                terms.append(term)
+                self.add_term(normalized_data, terms)
 
             builder = builder.where(*terms)
             builder = builder.limit(default_result_count)
 
             result: QueryResult = builder(
-                unrestricted=self.context.unrestricted, async_result=self.context.async_result,
+                unrestricted=self.context.unrestricted,
+                async_result=self.context.async_result,
             )
             include_queries.append(result)
 
@@ -582,7 +765,9 @@ class Search(object):
 
         raise NotImplementedError
 
-    def single_valued_coding_term(self, path_, value, modifier, ignore_not_modifier=False):
+    def single_valued_coding_term(
+        self, path_, value, modifier, ignore_not_modifier=False
+    ):
         """ """
         operator_, original_value = value
 
@@ -767,7 +952,9 @@ class Search(object):
             assert path_._where.name == "system"
 
             terms = [
-                self.create_term(path_ / "system", (value[0], path_._where.value), None),
+                self.create_term(
+                    path_ / "system", (value[0], path_._where.value), None
+                ),
                 self.create_term(path_ / "value", value, None),
             ]
         else:
@@ -1034,7 +1221,9 @@ class Search(object):
                 "You cannot use modifier (above,below) and prefix (sa,eb) at a time"
             )
         if modifier == "contains" and operator_ != "eq":
-            raise NotImplementedError("In case of :contains modifier, only eq prefix is supported")
+            raise NotImplementedError(
+                "In case of :contains modifier, only eq prefix is supported"
+            )
 
     def create_term(self, path_, value, modifier):
         """ """
@@ -1107,103 +1296,6 @@ class Search(object):
         else:
             raise NotImplementedError
 
-    def normalize_param_value(self, raw_value, container):
-        """ """
-        if isinstance(raw_value, list):
-            bucket = list()
-            for rv in raw_value:
-                self.normalize_param_value(rv, bucket)
-            if len(bucket) == 1:
-                container.append(bucket[0])
-            else:
-                container.append(bucket)
-
-        else:
-            escape_ = has_escape_comma(raw_value)
-            if escape_:
-                param_value = raw_value.replace("\\,", escape_comma_replacer)
-            else:
-                param_value = raw_value
-
-            value_parts = param_value.split(",")
-            comparison_operator = "eq"
-            bucket_ = list()
-            for val in value_parts:
-                if escape_:
-                    val_ = val.replace(escape_comma_replacer, "\\,")
-                else:
-                    val_ = val
-
-                for prefix in value_prefixes:
-                    if val_.startswith(prefix):
-                        comparison_operator = prefix
-                        val_ = val_[2:]
-                        break
-                bucket_.append((comparison_operator, val_))
-            if len(bucket_) == 1:
-                container.append(bucket_[0])
-            else:
-                container.append((None, bucket_))
-
-    def normalize_param(self, param_name):
-        """ """
-        try:
-            parts = param_name.split(":")
-            param_name_ = parts[0]
-            modifier_ = parts[1]
-        except IndexError:
-            modifier_ = None
-        raw_value = list(self.search_params.getall(param_name, []))
-        # Let's look at for any composite or combo type parameter
-        search_param = self._get_search_param_definition(param_name_)
-        if search_param.type == "composite":
-            return self._normalize_composite_param(
-                raw_value, param_def=search_param, modifier=modifier_
-            )
-
-        if len(raw_value) == 0:
-            raw_value = None
-        elif len(raw_value) == 1:
-            raw_value = raw_value[0]
-
-        values = list()
-        self.normalize_param_value(raw_value, values)
-
-        if len(values) == 1:
-            param_value_ = values[0]
-        else:
-            param_value_ = values
-
-        Search.validate_normalized_value(param_name_, param_value_, modifier_)
-        _path = self.resolve_path_context(param_name_)
-        return _path, param_value_, modifier_
-
-    def validate(self):
-        """ """
-        unwanted = set()
-
-        for param_name in self.search_params:
-
-            if "_type" in self.result_params:
-                if param_name.split(":")[0] not in self.allowed_search_params:
-                    unwanted.add(param_name)
-            elif param_name.split(":")[0] not in self.definition:
-                unwanted.add(param_name)
-
-        if len(unwanted) > 0:
-            params = ", ".join([u for u in unwanted])
-            resource = self.context.resource_name
-            if not resource:
-                if "_type" in self.result_params:
-                    resource = ", ".join(self.result_params["_type"])
-                else:
-                    pass
-                    # TODO
-            raise ValidationError(
-                f"({params}) search parameter(s) are not available for resource `{resource}`."
-            )
-        # xxx: later more
-
     @staticmethod
     def validate_normalized_value(param_name, param_value, modifier):
         """
@@ -1213,7 +1305,9 @@ class Search(object):
         """
         if modifier in ("missing", "exists"):
             if not isinstance(param_value, tuple):
-                raise ValidationError("Multiple values are not allowed for missing(exists) search")
+                raise ValidationError(
+                    "Multiple values are not allowed for missing(exists) search"
+                )
 
             if not param_value[1] in ("true", "false"):
 
@@ -1221,35 +1315,15 @@ class Search(object):
                     "Only ´true´ or ´false´ as value is allowed for missing(exists) search"
                 )
 
-    def resolve_path_context(self, param_name):
-        """ """
-        search_param = self._get_search_param_definition(param_name)
-        if search_param.expression is None:
-            raise NotImplementedError
-
-        # Some Safegurds
-        if search_param.type == "composite":
-            raise NotImplementedError
-
-        if search_param.type in ("token", "composite") and search_param.code.startswith("combo-"):
-            raise NotImplementedError
-
-        dotted_path = search_param.expression
-
-        if parentheses_wrapped.match(dotted_path):
-            dotted_path = dotted_path[1:-1]
-
-        return self._dotted_path_to_path_context(dotted_path)
-
     def attach_where_terms(self, builder):
         terms_container = list()
+
         # making sure no duplicate keys, important!
         for param_name in set(self.search_params):
-            normalized_data = self.normalize_param(param_name)
-            if isinstance(normalized_data, tuple):
-                normalized_data = [normalized_data]
-            for nd in normalized_data:
-                self.add_term(nd, terms_container)
+            raw_value = list(self.search_params.getall(param_name, []))
+            normalized_params = self.context.normalize_param(param_name, raw_value)
+            for np in normalized_params:
+                self.add_term(np, terms_container)
 
         return builder.where(*terms_container)
 
@@ -1263,9 +1337,12 @@ class Search(object):
                     order_ = SortOrderType.DESC
                     sort_field = sort_field[1:]
 
-                path_ = self.resolve_path_context(sort_field)
+                for sort_param_def in self.context._get_search_param_definitions(
+                    sort_field
+                ):
+                    path_ = self.context.resolve_path_context(sort_param_def)
+                    terms.append(sort_(path_, order_))
 
-                terms.append(sort_(path_, order_))
         if len(terms) > 0:
             return builder.sort(*terms)
         return builder
@@ -1287,16 +1364,13 @@ class Search(object):
         if "_elements" not in self.result_params:
             return builder
 
-        paths = [f"{self.context.resource_name}.{el}" for el in self.result_params["_elements"]]
-        mandatories = [f"{self.context.resource_name}.id"]
+        paths = [
+            f"{r}.{el}"
+            for el in self.result_params["_elements"]
+            for r in self.context.resource_types
+        ]
+        mandatories = [f"{r}.id" for r in self.context.resource_types]
         return builder.select(*paths, *mandatories)
-
-    def attach_from_terms(self, builder):
-        """ """
-        if "_type" not in self.result_params:
-            return builder
-
-        return builder.from_(self.result_params["_type"])
 
     def attach_summary_terms(self, builder):
         """ """
@@ -1308,111 +1382,73 @@ class Search(object):
 
         if self.result_params["_summary"] == "data":
             # TODO should we include all elements except text instead of exluding?
-            return builder.exclude(f"{self.context.resource_name}.text")
+            for r in self.context.resource_types:
+                builder = builder.exclude(f"{r}.text")
+            return builder
 
-        spec = lookup_fhir_resource_spec(self.context.resource_name, True, FHIR_VERSION.R4)
+        specs = [
+            lookup_fhir_resource_spec(r, True, FHIR_VERSION.R4)
+            for r in self.context.resource_types
+        ]
 
         if self.result_params["_summary"] == "true":
             summary_elements = [
-                f"{self.context.resource_name}.id",
-                f"{self.context.resource_name}.meta",
+                f"{r}.{attr}"
+                for r in self.context.resource_types
+                for attr in ["id", "meta"]
             ]
-            for el in spec.elements:
-                if el.is_summary:
-                    if el.path.endswith("[x]"):
-                        for prop in el.as_properties():
-                            summary_elements.append(f"{prop.path.rsplit('.', 1)[0]}.{prop.name}")
-                    else:
-                        summary_elements.append(el.path)
+
+            # filter all summary attributes
+            summary_attributes = [
+                attr for spec in specs for attr in spec.elements if attr.is_summary
+            ]
+
+            def get_attr_paths(attribute):
+                if attribute.path.endswith("[x]"):
+                    for prop in attribute.as_properties():
+                        return [
+                            f"{prop.path.rsplit('.', 1)[0]}.{prop.name}"
+                            for prop in attribute.as_properties()
+                        ]
+                else:
+                    return [attribute.path]
+
+            # append summary attributes' paths to summary_elements
+            summary_elements.extend(
+                [path for attr in summary_attributes for path in get_attr_paths(attr)]
+            )
 
             return builder.select(*summary_elements)
 
         if self.result_params["_summary"] == "text":
-            required_root_elements = [
-                el.path for el in spec.elements if el.n_min is not None and el.n_min > 0
-            ]
             text_elements = [
-                f"{self.context.resource_name}.text",
-                f"{self.context.resource_name}.id",
-                f"{self.context.resource_name}.meta",
-                *required_root_elements,
+                el.path
+                for spec in specs
+                for el in spec.elements
+                if el.n_min is not None and el.n_min > 0
             ]
+            text_elements.extend(
+                [
+                    f"{r}.{attr}"
+                    for r in self.context.resource_types
+                    for attr in ["text", "id", "meta"]
+                ]
+            )
+
             return builder.select(*text_elements)
 
     def response(self, result, includes):
         """ """
         return self.context.engine.wrapped_with_bundle(result, includes)
 
-    def _get_search_param_definition(self, param_name):
-        """ """
-        search_param = getattr(self.definition, param_name, None)
-        if search_param is None:
-            raise ValidationError(
-                "No search definition is available for search parameter "
-                f"``{param_name}`` on Resource ``{self.definition.resource_type}``."
-            )
-        return search_param
-
-    def _dotted_path_to_path_context(self, dotted_path):
-        """ """
-        if len(dotted_path.split(".")) == 1:
-            raise ValidationError("Invalid dotted path ´{0}´".format(dotted_path))
-
-        path_ = ElementPath.from_el_path(dotted_path)
-        path_.finalize(self.context.engine)
-        return path_
-
-    def _normalize_composite_param(self, raw_value, param_def, modifier):
-        """ """
-        if len(raw_value) < 1:
-            raise NotImplementedError(
-                "Currently duplicate composite type params are not allowed or supported"
-            )
-        value_parts = raw_value[0].split("&")
-        assert len(value_parts) == 2
-
-        composite_bucket = list()
-
-        part1 = [
-            ".".join([param_def.expression, param_def.component[0]["expression"]]),
-            value_parts[0],
-        ]
-        part1_param_value = list()
-        self.normalize_param_value(part1[1], part1_param_value)
-        if len(part1_param_value) == 1:
-            part1_param_value = part1_param_value[0]
-        composite_bucket.append(
-            (self._dotted_path_to_path_context(part1[0]), part1_param_value, modifier)
-        )
-        part2 = list()
-        for expr in param_def.component[1]["expression"].split("|"):
-            part_ = [
-                ".".join([param_def.expression, expr.strip()]),
-                value_parts[1],
-            ]
-            part2.append(part_)
-        part2_param_value = list()
-        self.normalize_param_value(part2[0][1], part2_param_value)
-
-        if len(part2_param_value) == 1:
-            part2_param_value = part2_param_value[0]
-        part2_temp = list()
-        for pr in part2:
-            part2_temp.append(
-                (self._dotted_path_to_path_context(pr[0]), part2_param_value, modifier)
-            )
-        if len(part2_temp) == 1:
-            part2_temp = part2_temp[0]
-
-        composite_bucket.append(part2_temp)
-
-        return composite_bucket
-
     def __call__(self):
         """ """
 
         # TODO: chaining
+        # self.chaining_queries = self.chaining()
+
         # TODO: reverse chaining (_has)
+        # self.reverse_chaining_queries = self.has()
 
         # MAIN QUERY
         self.main_query = self.build()
