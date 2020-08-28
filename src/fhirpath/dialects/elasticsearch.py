@@ -449,8 +449,7 @@ class ElasticSearchDialect(DialectBase):
                             )
                         resolved = q, term.unary_operator
 
-                elif term.path.context.type_name in ("dateTime", "date", "time", "instant",):
-
+                elif term.path.context.type_name in ("dateTime", "date", "time", "instant"):
                     resolved = self.resolve_datetime_term(term, root_replacer)
 
                 elif term.path.context.type_name in (
@@ -481,25 +480,20 @@ class ElasticSearchDialect(DialectBase):
             return self.resolve_nonfhir_term(term)
 
     def resolve_datetime_term(self, term, root_replacer=None):
-        """TODO: 1.) Value Conversion(stringify) based of context.type_name
-        i.e date or dateTime or Time """
+        """ """
         qr = dict()
-        if INonFhirTerm.providedBy(term):
-            type_name = term.value.__visit_name__
-        else:
-            type_name = term.path.context.type_name
 
         value = term.get_real_value()
         path_ = ElasticSearchDialect.create_dotted_path(term, root_replacer)
 
-        if type_name in ("dateTime", "instant"):
+        if hasattr(value, "day") and hasattr(value, "hour"):
             value_formatter = isodate.DATE_EXT_COMPLETE + "T" + isodate.TIME_EXT_COMPLETE
-        elif type_name == "date":
+        elif hasattr(value, "day"):
             value_formatter = isodate.DATE_EXT_COMPLETE
-        elif type_name == "time":
+        elif hasattr(value, "hour"):
             value_formatter = isodate.TIME_EXT_COMPLETE
         else:
-            raise NotImplementedError
+            raise ValueError("Could not understand date query value.")
 
         if term.comparison_operator in (OPERATOR.eq, OPERATOR.ne):
             qr["range"] = {
@@ -509,7 +503,7 @@ class ElasticSearchDialect(DialectBase):
                 }
             }
 
-        elif term.comparison_operator in (OPERATOR.le, OPERATOR.lt, OPERATOR.ge, OPERATOR.gt,):
+        elif term.comparison_operator in (OPERATOR.le, OPERATOR.lt, OPERATOR.ge, OPERATOR.gt):
             qr["range"] = {
                 path_: {
                     ES_PY_OPERATOR_MAP[term.comparison_operator]: isodate.strftime(
@@ -518,7 +512,7 @@ class ElasticSearchDialect(DialectBase):
                 }
             }
 
-        if type_name in ("dateTime", "instant", "time") and value.tzinfo:
+        if hasattr(value, "tzinfo") and value.tzinfo:
             timezone = isodate.tz_isoformat(value)
             if timezone not in ("", "Z"):
                 qr["range"][path_]["time_zone"] = timezone

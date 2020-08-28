@@ -383,7 +383,7 @@ class Search(object):
             term = self.create_exists_term(path_, param_value, modifier)
 
         elif (
-            getattr(path_.context.type_class, "is_primitive", None)
+            hasattr(path_.context.type_class, "is_primitive")
             and not path_.context.type_class.is_primitive()
         ):
             # we need normalization
@@ -414,8 +414,10 @@ class Search(object):
             elif klass_name == "Narrative":
                 path_ = path_ / "div"
                 term_factory = self.create_term
+            elif klass_name == "Period":
+                term_factory = self.create_period_term
             else:
-                raise NotImplementedError
+                raise NotImplementedError(f"Can't perform search on element of type {klass_name}")
             term = term_factory(path_, param_value, modifier)
         else:
             term = self.create_term(path_, param_value, modifier)
@@ -425,13 +427,8 @@ class Search(object):
     def create_identifier_term(self, path_, param_value, modifier):
         """ """
         if isinstance(param_value, list):
-            terms = list()
-            for value in param_value:
-                # Term or Group
-                term = self.create_identifier_term(path_, value, modifier)
-                terms.append(term)
-            group = G_(*terms, path=path_, type_=GroupType.COUPLED)
-            return group
+            terms = [self.create_identifier_term(path_, value, modifier) for value in param_value]
+            return G_(*terms, path=path_, type_=GroupType.COUPLED)
 
         elif isinstance(param_value, tuple):
             return self.single_valued_identifier_term(path_, param_value, modifier)
@@ -502,14 +499,8 @@ class Search(object):
     def create_quantity_term(self, path_, param_value, modifier):
         """ """
         if isinstance(param_value, list):
-            terms = list()
-            for value in param_value:
-                # Term or Group
-                term = self.create_quantity_term(path_, value, modifier)
-                terms.append(term)
-            group = G_(*terms, path=path_, type_=GroupType.COUPLED)
-
-            return group
+            terms = [self.create_quantity_term(path_, value, modifier) for value in param_value]
+            return G_(*terms, path=path_, type_=GroupType.COUPLED)
 
         elif isinstance(param_value, tuple):
             return self.single_valued_quantity_term(path_, param_value, modifier)
@@ -521,13 +512,9 @@ class Search(object):
         operator_, original_value = value
 
         if isinstance(original_value, list):
-            terms_ = list()
-            for val in original_value:
-                term_ = self.single_valued_quantity_term(path_, val, modifier)
-                terms_.append(term_)
+            terms = [self.single_valued_quantity_term(path_, val, modifier) for val in original_value]
             # IN Like Group
-            group = G_(*terms_, path=path_, type_=GroupType.DECOUPLED)
-            return group
+            return G_(*terms, path=path_, type_=GroupType.DECOUPLED)
 
         operator_eq = "eq"
         has_pipe = "|" in original_value
@@ -587,13 +574,8 @@ class Search(object):
     def create_coding_term(self, path_, param_value, modifier):
         """ """
         if isinstance(param_value, list):
-            terms = list()
-            for value in param_value:
-                # Term or Group
-                term = self.create_coding_term(path_, value, modifier)
-                terms.append(term)
-            group = G_(*terms, path=path_, type_=GroupType.COUPLED)
-            return group
+            terms = [self.create_coding_term(path_, value, modifier) for value in param_value]
+            return G_(*terms, path=path_, type_=GroupType.COUPLED)
 
         elif isinstance(param_value, tuple):
             return self.single_valued_coding_term(path_, param_value, modifier)
@@ -605,13 +587,9 @@ class Search(object):
         operator_, original_value = value
 
         if isinstance(original_value, list):
-            terms_ = list()
-            for val in original_value:
-                term_ = self.single_valued_coding_term(path_, val, modifier)
-                terms_.append(term_)
+            terms = [self.single_valued_coding_term(path_, val, modifier) for val in original_value]
             # IN Like Group
-            group = G_(*terms_, path=path_, type_=GroupType.DECOUPLED)
-            return group
+            return G_(*terms, path=path_, type_=GroupType.DECOUPLED)
 
         has_pipe = "|" in original_value
         terms = list()
@@ -666,13 +644,8 @@ class Search(object):
     def create_codeableconcept_term(self, path_, param_value, modifier):
         """ """
         if isinstance(param_value, list):
-            terms = list()
-            for value in param_value:
-                # Term or Group
-                term = self.create_codeableconcept_term(path_, value, modifier)
-                terms.append(term)
-            group = G_(*terms, path=path_, type_=GroupType.COUPLED)
-            return group
+            terms = [self.create_codeableconcept_term(path_, value, modifier) for value in param_value]
+            return G_(*terms, path=path_, type_=GroupType.COUPLED)
 
         elif isinstance(param_value, tuple):
             return self.single_valued_codeableconcept_term(path_, param_value, modifier)
@@ -861,13 +834,8 @@ class Search(object):
     def create_reference_term(self, path_, param_value, modifier):
         """ """
         if isinstance(param_value, list):
-            terms = list()
-            for value in param_value:
-                # Term or Group
-                term = self.create_reference_term(path_, value, modifier)
-                terms.append(term)
-            group = G_(*terms, path=path_, type_=GroupType.COUPLED)
-            return group
+            terms = [self.create_reference_term(path_, value, modifier) for value in param_value]
+            return G_(*terms, path=path_, type_=GroupType.COUPLED)
 
         elif isinstance(param_value, tuple):
             return self.single_valued_reference_term(path_, param_value, modifier)
@@ -877,13 +845,10 @@ class Search(object):
         operator_, original_value = value
 
         if isinstance(original_value, list):
-            terms_ = list()
-            for val in original_value:
-                term_ = self.single_valued_reference_term(path_, val, modifier)
-                terms_.append(term_)
-            # IN Like Group
-            group = G_(*terms_, path=path_, type_=GroupType.DECOUPLED)
-            return group
+            terms = [
+                self.single_valued_reference_term(path_, val, modifier) for val in original_value
+            ]
+            return G_(*terms, path=path_, type_=GroupType.DECOUPLED)
 
         if path_._where:
             if path_._where.type != WhereConstraintType.T2:
@@ -922,14 +887,8 @@ class Search(object):
     def create_money_term(self, path_, param_value, modifier):
         """ """
         if isinstance(param_value, list):
-            terms = list()
-            for value in param_value:
-                # Term or Group
-                term = self.create_money_term(path_, value, modifier)
-                terms.append(term)
-            group = G_(*terms, path=path_, type_=GroupType.COUPLED)
-
-            return group
+            terms = [self.create_money_term(path_, value, modifier) for value in param_value]
+            return G_(*terms, path=path_, type_=GroupType.COUPLED)
 
         elif isinstance(param_value, tuple):
             return self.single_valued_money_term(path_, param_value, modifier)
@@ -941,13 +900,10 @@ class Search(object):
         operator_, original_value = value
 
         if isinstance(original_value, list):
-            terms_ = list()
-            for val in original_value:
-                term_ = self.single_valued_money_term(path_, val, modifier)
-                terms_.append(term_)
-            # IN Like Group
-            group = G_(*terms_, path=path_, type_=GroupType.DECOUPLED)
-            return group
+            terms = [
+                self.single_valued_money_term(path_, value, modifier) for value in original_value
+            ]
+            return G_(*terms, path=path_, type_=GroupType.DECOUPLED)
 
         if self.context.engine.fhir_release == FHIR_VERSION.STU3:
             # make legacy
@@ -995,6 +951,81 @@ class Search(object):
         """ """
         assert self.context.engine.fhir_release == FHIR_VERSION.STU3
         return self.single_valued_quantity_term(path_, value, modifier)
+
+    def create_period_term(self, path_, param_value, modifier):
+        if isinstance(param_value, list):
+            terms = [
+                self.single_valued_period_term(path_, value, modifier) for value in param_value
+            ]
+            return G_(*terms, path=path_, type_=GroupType.COUPLED)
+
+        elif isinstance(param_value, tuple):
+            return self.single_valued_period_term(path_, param_value, modifier)
+
+        raise NotImplementedError
+
+    def single_valued_period_term(self, path_, value, modifier):
+        operator, original_value = value
+
+        if isinstance(original_value, list):
+            terms = [self.single_valued_period_term(path_, val, modifier) for val in original_value]
+            # IN Like Group
+            return G_(*terms, path=path_, type_=GroupType.DECOUPLED)
+
+        if operator == "eq":
+            terms = [
+                self.create_term(path_ / "start", ("ge", original_value), modifier),
+                self.create_term(path_ / "end", ("le", original_value), modifier),
+            ]
+            type_ = GroupType.COUPLED
+        elif operator == "ne":
+            terms = [
+                self.create_term(path_ / "start", ("lt", original_value), modifier),
+                self.create_term(path_ / "end", ("gt", original_value), modifier),
+            ]
+            type_ = GroupType.DECOUPLED
+        elif operator == "gt":
+            terms = [
+                self.create_term(path_ / "end", ("gt", original_value), modifier),
+            ]
+            type_ = GroupType.COUPLED
+        elif operator == "lt":
+            terms = [
+                self.create_term(path_ / "start", ("lt", original_value), modifier),
+            ]
+            type_ = GroupType.COUPLED
+        elif operator == "ge":
+            terms = [
+                self.single_valued_period_term(path_, ("gt", original_value), modifier),
+                self.single_valued_period_term(path_, ("eq", original_value), modifier),
+            ]
+            type_ = GroupType.DECOUPLED
+        elif operator == "le":
+            terms = [
+                self.single_valued_period_term(path_, ("lt", original_value), modifier),
+                self.single_valued_period_term(path_, ("eq", original_value), modifier),
+            ]
+            type_ = GroupType.DECOUPLED
+        elif operator == "sa":
+            terms = [
+                self.create_term(path_ / "start", ("gt", original_value), modifier),
+            ]
+            type_ = GroupType.COUPLED
+        elif operator == "eb":
+            terms = [
+                self.create_term(path_ / "end", ("lt", original_value), modifier),
+            ]
+            type_ = GroupType.COUPLED
+        elif operator == "ap":
+            terms = [
+                self.create_term(path_ / "start", ("le", original_value), modifier),
+                self.create_term(path_ / "end", ("ge", original_value), modifier),
+            ]
+            type_ = GroupType.COUPLED
+        else:
+            raise NotImplementedError(f"prefix {operator} not handled for periods.")
+
+        return G_(*terms, path=path_, type_=type_)
 
     def validate_pre_term(self, operator_, path_, value, modifier):
         """ """
