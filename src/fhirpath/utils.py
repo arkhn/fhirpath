@@ -226,9 +226,7 @@ def lookup_fhir_class(
     try:
         klass = factory(resource_type)
     except KeyError:
-        raise LookupError(
-            f"{resource_type} doesnt to be valid FHIRModel (element type) name!"
-        )
+        raise LookupError(f"{resource_type} is not a valid FHIR class")
     return klass
 
 

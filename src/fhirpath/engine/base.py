@@ -128,13 +128,20 @@ class EngineResult(object):
             {"Patient": ["list", "of", "referenced", "patient", "ids"], "Observation": []}
         """
         assert search_param.type == "reference"
+        ids: Dict = defaultdict(list)
 
         def browse(node, path):
             parts = path.split(".", 1)
-            if len(parts) == 1:
-                return node[parts[0]]
 
-            return browse(node[parts[0]], parts[1])
+            if "where(" in parts[0]:
+                parts = parts[1:]
+
+            if len(parts) == 0:
+                return node
+            elif len(parts) == 1:
+                return node[parts[0]]
+            else:
+                return browse(node[parts[0]], parts[1])
 
         def append_ref(ref_attr):
             if "reference" not in ref_attr:
@@ -142,7 +149,6 @@ class EngineResult(object):
             referenced_resource, _id = ref_attr["reference"].split("/")
             ids[referenced_resource].append(_id)
 
-        ids: Dict = defaultdict(list)
         resource_type, path = search_param.expression.split(".", 1)
         for row in self.body:
             ref_attribute = browse(row[0], path)

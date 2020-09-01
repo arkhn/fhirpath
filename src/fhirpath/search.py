@@ -306,6 +306,7 @@ class Search(object):
         else:
             raise Invalid
 
+        self.reverse_chaining_results: Optional[Dict[str, Set[str]]] = None
         self.result_params: Dict = dict()
         self.search_params = None
 
@@ -464,6 +465,17 @@ class Search(object):
         builder = self.attach_sort_terms(builder)
         builder = self.attach_limit_terms(builder)
 
+        # handle _has predicates
+        if self.reverse_chaining_results:
+            # filter results on IDs
+            terms: List = []
+            for resource_type, ids in self.reverse_chaining_results.items():
+                search_context = SearchContext(self.context.engine, resource_type)
+                normalized_data = search_context.normalize_param("_id", ",".join(ids))
+                self.add_term(normalized_data, terms)
+
+            builder = builder.where(*terms)
+
         result: QueryResult = builder(
             unrestricted=self.context.unrestricted,
             async_result=self.context.async_result,
@@ -471,6 +483,69 @@ class Search(object):
 
         return result
 
+    # FIXME: sorting, paginating and large results are not handled yet.
+    def has(self) -> List[Tuple[SearchParameter, QueryResult]]:
+        """
+        This function handles the _has keyword.
+        """
+        has_queries: List[Tuple[SearchParameter, QueryResult]] = []
+        for _has, value in self.result_params.get("_has", []):
+            # Parse the _has input parameter
+            parts = _has.split(":")
+            if len(parts) != 4:
+                raise ValidationError(
+                    f"bad _has param '{_has}', should be _has:Resource:ref_search_param:value_search_param=value"
+                )
+
+            from_resource_type: str = parts[1]
+            ref_param_raw: str = parts[2]
+            value_param_raw: str = parts[3]
+
+            from_context = SearchContext(self.context.engine, from_resource_type)
+
+            # Get the reference search parameter definition
+            # we use the first definition returned since we only have one resource in the context
+            ref_param = from_context._get_search_param_definitions(ref_param_raw)[0]
+            if not ref_param:
+                raise ValidationError(
+                    f"search parameter {from_resource_type}.{ref_param_raw} is unknown"
+                )
+            if ref_param.type != "reference":
+                raise ValidationError(
+                    f"search parameter {from_resource_type}.{ref_param_raw} "
+                    f"must be of type 'reference', got {ref_param.type}"
+                )
+            # ensure that the reference search param targets the correct type
+            if not any(r in ref_param.target for r in self.context.resource_types):
+                raise ValidationError(
+                    f"unexpected types {','.join(self.context.resource_types)} "
+                    f"for reference {from_resource_type}.{ref_param_raw}"
+                )
+
+            # Get the value search parameter definition
+            value_param = from_context._get_search_param_definitions(value_param_raw)[0]
+            if not value_param:
+                raise ValidationError(
+                    f"search parameter {from_resource_type}.{ref_param_raw} is unknown"
+                )
+            # Build a Q_ (query) object to join the resource based on reference ids.
+            builder = Q_([from_resource_type], from_context.engine)
+            normalized_data = from_context.normalize_param(value_param_raw, value)
+            terms_container: List = []
+            self.add_term(normalized_data, terms_container)
+
+            builder = builder.where(*terms_container)
+            builder = builder.limit(default_result_count)
+
+            result: QueryResult = builder(
+                unrestricted=self.context.unrestricted,
+                async_result=self.context.async_result,
+            )
+            has_queries.append((ref_param, result))
+
+        return has_queries
+
+    # FIXME: sorting, paginating and large results are not handled yet.
     def include(self, main_query_result: EngineResult) -> List[QueryResult]:
         """
         This function handles the _include keyword.
@@ -600,7 +675,9 @@ class Search(object):
             elif klass_name == "Period":
                 term_factory = self.create_period_term
             else:
-                raise NotImplementedError(f"Can't perform search on element of type {klass_name}")
+                raise NotImplementedError(
+                    f"Can't perform search on element of type {klass_name}"
+                )
             term = term_factory(path_, param_value, modifier)
         else:
             term = self.create_term(path_, param_value, modifier)
@@ -610,7 +687,10 @@ class Search(object):
     def create_identifier_term(self, path_, param_value, modifier):
         """ """
         if isinstance(param_value, list):
-            terms = [self.create_identifier_term(path_, value, modifier) for value in param_value]
+            terms = [
+                self.create_identifier_term(path_, value, modifier)
+                for value in param_value
+            ]
             return G_(*terms, path=path_, type_=GroupType.COUPLED)
 
         elif isinstance(param_value, tuple):
@@ -682,7 +762,10 @@ class Search(object):
     def create_quantity_term(self, path_, param_value, modifier):
         """ """
         if isinstance(param_value, list):
-            terms = [self.create_quantity_term(path_, value, modifier) for value in param_value]
+            terms = [
+                self.create_quantity_term(path_, value, modifier)
+                for value in param_value
+            ]
             return G_(*terms, path=path_, type_=GroupType.COUPLED)
 
         elif isinstance(param_value, tuple):
@@ -695,7 +778,10 @@ class Search(object):
         operator_, original_value = value
 
         if isinstance(original_value, list):
-            terms = [self.single_valued_quantity_term(path_, val, modifier) for val in original_value]
+            terms = [
+                self.single_valued_quantity_term(path_, val, modifier)
+                for val in original_value
+            ]
             # IN Like Group
             return G_(*terms, path=path_, type_=GroupType.DECOUPLED)
 
@@ -757,7 +843,9 @@ class Search(object):
     def create_coding_term(self, path_, param_value, modifier):
         """ """
         if isinstance(param_value, list):
-            terms = [self.create_coding_term(path_, value, modifier) for value in param_value]
+            terms = [
+                self.create_coding_term(path_, value, modifier) for value in param_value
+            ]
             return G_(*terms, path=path_, type_=GroupType.COUPLED)
 
         elif isinstance(param_value, tuple):
@@ -772,7 +860,10 @@ class Search(object):
         operator_, original_value = value
 
         if isinstance(original_value, list):
-            terms = [self.single_valued_coding_term(path_, val, modifier) for val in original_value]
+            terms = [
+                self.single_valued_coding_term(path_, val, modifier)
+                for val in original_value
+            ]
             # IN Like Group
             return G_(*terms, path=path_, type_=GroupType.DECOUPLED)
 
@@ -829,7 +920,10 @@ class Search(object):
     def create_codeableconcept_term(self, path_, param_value, modifier):
         """ """
         if isinstance(param_value, list):
-            terms = [self.create_codeableconcept_term(path_, value, modifier) for value in param_value]
+            terms = [
+                self.create_codeableconcept_term(path_, value, modifier)
+                for value in param_value
+            ]
             return G_(*terms, path=path_, type_=GroupType.COUPLED)
 
         elif isinstance(param_value, tuple):
@@ -1021,7 +1115,10 @@ class Search(object):
     def create_reference_term(self, path_, param_value, modifier):
         """ """
         if isinstance(param_value, list):
-            terms = [self.create_reference_term(path_, value, modifier) for value in param_value]
+            terms = [
+                self.create_reference_term(path_, value, modifier)
+                for value in param_value
+            ]
             return G_(*terms, path=path_, type_=GroupType.COUPLED)
 
         elif isinstance(param_value, tuple):
@@ -1033,7 +1130,8 @@ class Search(object):
 
         if isinstance(original_value, list):
             terms = [
-                self.single_valued_reference_term(path_, val, modifier) for val in original_value
+                self.single_valued_reference_term(path_, val, modifier)
+                for val in original_value
             ]
             return G_(*terms, path=path_, type_=GroupType.DECOUPLED)
 
@@ -1074,7 +1172,9 @@ class Search(object):
     def create_money_term(self, path_, param_value, modifier):
         """ """
         if isinstance(param_value, list):
-            terms = [self.create_money_term(path_, value, modifier) for value in param_value]
+            terms = [
+                self.create_money_term(path_, value, modifier) for value in param_value
+            ]
             return G_(*terms, path=path_, type_=GroupType.COUPLED)
 
         elif isinstance(param_value, tuple):
@@ -1088,7 +1188,8 @@ class Search(object):
 
         if isinstance(original_value, list):
             terms = [
-                self.single_valued_money_term(path_, value, modifier) for value in original_value
+                self.single_valued_money_term(path_, value, modifier)
+                for value in original_value
             ]
             return G_(*terms, path=path_, type_=GroupType.DECOUPLED)
 
@@ -1447,8 +1548,24 @@ class Search(object):
         # TODO: chaining
         # self.chaining_queries = self.chaining()
 
-        # TODO: reverse chaining (_has)
-        # self.reverse_chaining_queries = self.has()
+        # reverse chaining (_has)
+        if self.result_params.get("_has"):
+            has_queries = self.has()
+            # compute the intersection of referenced patients' ID from the result of _has queries.
+            self.reverse_chaining_results = {}
+            for ref_param, q in has_queries:
+                query_result = q.fetchall()
+                self.reverse_chaining_results = {
+                    r: set(id_list).intersection(self.reverse_chaining_results[r])
+                    if self.reverse_chaining_results.get(r)
+                    else id_list
+                    for r, id_list in query_result.extract_references(ref_param).items()
+                    if r in self.context.resource_types
+                }
+
+            # if the _has predicates did not match any documents, return an empty result
+            if not self.reverse_chaining_results:
+                return self.response(query_result, [])
 
         # MAIN QUERY
         self.main_query = self.build()
@@ -1465,9 +1582,8 @@ class Search(object):
             include_results.append(q.fetchall())
 
         assert main_result is not None
-        response = self.response(main_result, include_results)
 
-        return response
+        return self.response(main_result, include_results)
 
 
 class AsyncSearch(Search):
