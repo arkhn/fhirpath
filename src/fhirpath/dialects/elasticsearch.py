@@ -42,7 +42,12 @@ def escape_star(v):
 def escape_all(v):
     """ """
     v = escape_star(v)
-    v = v.replace(".", "\\.").replace("?", "\\?").replace(":", "\\:").replace("[", "\\[")
+    v = (
+        v.replace(".", "\\.")
+        .replace("?", "\\?")
+        .replace(":", "\\:")
+        .replace("[", "\\[")
+    )
     return v
 
 
@@ -105,7 +110,7 @@ class ElasticSearchDialect(DialectBase):
                 path_ = ElasticSearchDialect.apply_path_replacement(
                     str(path_context._path), root_replacer
                 )
-                sort_sub_query["nested"] = {"path": path_}
+                sort_sub_query["nested_path"] = path_
             if path_context.is_root():
                 break
             path_context = path_context.parent
@@ -123,6 +128,8 @@ class ElasticSearchDialect(DialectBase):
             q = {"terms": {path: value}}
         elif match_type == TermMatchType.EXACT:
             q = {"term": {f"{path}.raw": value}}
+        # FIXME: "match" queries should be handled in their own function "create_match"
+        # also, find a better way to handle searching on all resources
         elif all_resources:
             q = {"multi_match": {"query": value, "fields": [path]}}
         else:
@@ -256,10 +263,11 @@ class ElasticSearchDialect(DialectBase):
         """
         body_structure = ElasticSearchDialect.create_structure()
         conditional_terms = [
-            w for w in query.get_where() if w.path.context.resource_type == resource_type
+            w
+            for w in query.get_where()
+            if w.path.context.resource_type == resource_type
         ]
         for term in conditional_terms:
-            """ """
             q, unary_operator = self.resolve_term(term, mapping, root_replacer)
 
             if unary_operator == OPERATOR.neg:
@@ -272,12 +280,12 @@ class ElasticSearchDialect(DialectBase):
 
                 frameinfo = getframeinfo(currentframe())
                 raise NotImplementedError(
-                    "File: {0} Line: {1}".format(frameinfo.filename, frameinfo.lineno + 1)
+                    f"File: {frameinfo.filename} Line: {frameinfo.lineno + 1}"
                 )
 
             container.append(q)
 
-        # ResourceType bind
+        # if not searching on all resources, add a predicate to filter on resourceType
         if resource_type != "Resource":
             ElasticSearchDialect.apply_from_constraint(
                 query, body_structure, resource_type, root_replacer=root_replacer
@@ -290,7 +298,9 @@ class ElasticSearchDialect(DialectBase):
         # Limit
         ElasticSearchDialect.apply_limit(query.get_limit(), body_structure)
         # ES source_
-        ElasticSearchDialect.apply_source_filter(query, body_structure, root_replacer=root_replacer)
+        ElasticSearchDialect.apply_source_filter(
+            query, body_structure, root_replacer=root_replacer
+        )
 
         ElasticSearchDialect.clean_up(body_structure)
 
@@ -318,8 +328,8 @@ class ElasticSearchDialect(DialectBase):
                 )
             )
         if len(query_fragments) == 0:
-            # Search on all types
-            # TODO mapping for all resources?
+            # Search on all types: available searchparams use "Resource" as path.context.resource_type
+            # Use "*" as root_replacer to match any resource across the ES mapping.
             return self.compile_for_single_resource_type(
                 query, resource_type="Resource", mapping=None, root_replacer="*",
             )
@@ -395,7 +405,9 @@ class ElasticSearchDialect(DialectBase):
             return qr, unary_operator
 
         elif IExistsTerm.providedBy(term):
-            return ElasticSearchDialect.resolve_exists_term(term, root_replacer=root_replacer)
+            return ElasticSearchDialect.resolve_exists_term(
+                term, root_replacer=root_replacer
+            )
 
         elif ITerm.providedBy(term):
 
@@ -415,7 +427,9 @@ class ElasticSearchDialect(DialectBase):
                 ):
                     # xxx: may do something special?
                     multiple = term.path.context.multiple
-                    dotted_path = ElasticSearchDialect.create_dotted_path(term, root_replacer)
+                    dotted_path = ElasticSearchDialect.create_dotted_path(
+                        term, root_replacer
+                    )
                     value = term.get_real_value()
 
                     # FIXME when searching on all resources, we don't have the mapping
@@ -436,7 +450,9 @@ class ElasticSearchDialect(DialectBase):
                         elif term.comparison_operator == OPERATOR.eb:
                             q = ElasticSearchDialect.create_eb_term(dotted_path, value)
                         elif term.comparison_operator == OPERATOR.contains:
-                            q = ElasticSearchDialect.create_contains_term(dotted_path, value)
+                            q = ElasticSearchDialect.create_contains_term(
+                                dotted_path, value
+                            )
                         else:
                             # If root_replacer is "*", we're searching on all resources
                             all_resources = root_replacer == "*"
@@ -449,7 +465,12 @@ class ElasticSearchDialect(DialectBase):
                             )
                         resolved = q, term.unary_operator
 
-                elif term.path.context.type_name in ("dateTime", "date", "time", "instant"):
+                elif term.path.context.type_name in (
+                    "dateTime",
+                    "date",
+                    "time",
+                    "instant",
+                ):
                     resolved = self.resolve_datetime_term(term, root_replacer)
 
                 elif term.path.context.type_name in (
@@ -459,7 +480,9 @@ class ElasticSearchDialect(DialectBase):
                     "positiveInt",
                 ):
 
-                    resolved = ElasticSearchDialect.resolve_numeric_term(term, root_replacer)
+                    resolved = ElasticSearchDialect.resolve_numeric_term(
+                        term, root_replacer
+                    )
                 else:
                     raise NotImplementedError
 
@@ -487,7 +510,9 @@ class ElasticSearchDialect(DialectBase):
         path_ = ElasticSearchDialect.create_dotted_path(term, root_replacer)
 
         if hasattr(value, "day") and hasattr(value, "hour"):
-            value_formatter = isodate.DATE_EXT_COMPLETE + "T" + isodate.TIME_EXT_COMPLETE
+            value_formatter = (
+                isodate.DATE_EXT_COMPLETE + "T" + isodate.TIME_EXT_COMPLETE
+            )
         elif hasattr(value, "day"):
             value_formatter = isodate.DATE_EXT_COMPLETE
         elif hasattr(value, "hour"):
@@ -498,12 +523,21 @@ class ElasticSearchDialect(DialectBase):
         if term.comparison_operator in (OPERATOR.eq, OPERATOR.ne):
             qr["range"] = {
                 path_: {
-                    ES_PY_OPERATOR_MAP[OPERATOR.ge]: isodate.strftime(value, value_formatter),
-                    ES_PY_OPERATOR_MAP[OPERATOR.le]: isodate.strftime(value, value_formatter),
+                    ES_PY_OPERATOR_MAP[OPERATOR.ge]: isodate.strftime(
+                        value, value_formatter
+                    ),
+                    ES_PY_OPERATOR_MAP[OPERATOR.le]: isodate.strftime(
+                        value, value_formatter
+                    ),
                 }
             }
 
-        elif term.comparison_operator in (OPERATOR.le, OPERATOR.lt, OPERATOR.ge, OPERATOR.gt):
+        elif term.comparison_operator in (
+            OPERATOR.le,
+            OPERATOR.lt,
+            OPERATOR.ge,
+            OPERATOR.gt,
+        ):
             qr["range"] = {
                 path_: {
                     ES_PY_OPERATOR_MAP[term.comparison_operator]: isodate.strftime(
@@ -517,8 +551,12 @@ class ElasticSearchDialect(DialectBase):
             if timezone not in ("", "Z"):
                 qr["range"][path_]["time_zone"] = timezone
 
-        if (term.comparison_operator != OPERATOR.ne and term.unary_operator == OPERATOR.neg) or (
-            term.comparison_operator == OPERATOR.ne and term.unary_operator != OPERATOR.neg
+        if (
+            term.comparison_operator != OPERATOR.ne
+            and term.unary_operator == OPERATOR.neg
+        ) or (
+            term.comparison_operator == OPERATOR.ne
+            and term.unary_operator != OPERATOR.neg
         ):
             unary_operator = OPERATOR.neg
         else:
@@ -541,11 +579,20 @@ class ElasticSearchDialect(DialectBase):
                 }
             }
 
-        elif term.comparison_operator in (OPERATOR.le, OPERATOR.lt, OPERATOR.ge, OPERATOR.gt,):
+        elif term.comparison_operator in (
+            OPERATOR.le,
+            OPERATOR.lt,
+            OPERATOR.ge,
+            OPERATOR.gt,
+        ):
             qr["range"] = {path_: {ES_PY_OPERATOR_MAP[term.comparison_operator]: value}}
 
-        if (term.comparison_operator != OPERATOR.ne and term.unary_operator == OPERATOR.neg) or (
-            term.comparison_operator == OPERATOR.ne and term.unary_operator != OPERATOR.neg
+        if (
+            term.comparison_operator != OPERATOR.ne
+            and term.unary_operator == OPERATOR.neg
+        ) or (
+            term.comparison_operator == OPERATOR.ne
+            and term.unary_operator != OPERATOR.neg
         ):
             unary_operator = OPERATOR.neg
         else:
@@ -569,13 +616,16 @@ class ElasticSearchDialect(DialectBase):
                 qr = {"match_phrase_prefix": {path_: value}}
             elif term.comparison_operator == OPERATOR.eb:
                 qr = {
-                    "query_string": {"fields": [path_], "query": "*{0}".format(escape_star(value))}
+                    "query_string": {
+                        "fields": [path_],
+                        "query": f"*{escape_star(value)}",
+                    }
                 }
             elif term.comparison_operator == OPERATOR.contains:
                 qr = {
                     "query_string": {
                         "fields": [path_],
-                        "query": "*{0}*".format(escape_star(value)),
+                        "query": f"*{escape_star(value)}*",
                     }
                 }
             else:
@@ -597,7 +647,9 @@ class ElasticSearchDialect(DialectBase):
 
         qr = {"exists": {"field": path_}}
         if not INonFhirTerm.providedBy(term):
-            qr = ElasticSearchDialect.attach_nested_on_demand(term.path.context, qr, root_replacer)
+            qr = ElasticSearchDialect.attach_nested_on_demand(
+                term.path.context, qr, root_replacer
+            )
 
         return qr, term.unary_operator
 
@@ -606,9 +658,13 @@ class ElasticSearchDialect(DialectBase):
         if IPrimitiveTypeCollection.providedBy(term.value):
             visit_name = term.value.registered_visit
             if visit_name in ("string", "code", "oid", "id", "uuid"):
-                if visit_name == "string" and term.match_type not in (None, TermMatchType.EXACT,):
+                if visit_name == "string" and term.match_type not in (
+                    None,
+                    TermMatchType.EXACT,
+                ):
                     raise ValueError(
-                        "PrimitiveTypeCollection instance is not " "allowed if match type not exact"
+                        "PrimitiveTypeCollection instance is not "
+                        "allowed if match type not exact"
                     )
             else:
                 raise NotImplementedError
@@ -630,7 +686,9 @@ class ElasticSearchDialect(DialectBase):
                 resolved = ElasticSearchDialect.resolve_string_term(term, {}, None)
             else:
                 value = term.get_real_value()
-                q = ElasticSearchDialect.create_term(term.path, value, match_type=term.match_type)
+                q = ElasticSearchDialect.create_term(
+                    term.path, value, match_type=term.match_type
+                )
                 resolved = q, term.unary_operator
 
         elif visit_name in ("dateTime", "date", "time", "instant"):
@@ -661,7 +719,7 @@ class ElasticSearchDialect(DialectBase):
         """ """
         for term in sort_terms:
             sort_sub_query = {
-                "order": term.order == SortOrderType.DESC and "desc" or "asc",
+                "order": "desc" if term.order == SortOrderType.DESC else "asc",
                 "unmapped_type": "long",
             }
             sort_sub_query = ElasticSearchDialect.add_nested_path(
@@ -723,6 +781,8 @@ class ElasticSearchDialect(DialectBase):
             else:
                 includes.append(root_replacer)
         elif len(query.get_select()) > 0:
+            # FIXME: {Resource}.resourceType is not a valid FHIR
+            # attribute but we need it to build the Bundle.
             includes.append(f"{root_replacer}.resourceType")
             for path_el in query.get_select():
                 includes.append(replace(path_el))
@@ -730,21 +790,17 @@ class ElasticSearchDialect(DialectBase):
         if len(includes) > 0:
             body_structure["_source"]["includes"].extend(includes)
 
-        # TODO excludes for other dialects than elastic?
-        excludes = list()
-        if len(query.get_exclude()) > 0:
-            for path_el in query.get_exclude():
-                excludes.append(replace(path_el))
-
-        if len(excludes) > 0:
-            body_structure["_source"]["excludes"].extend(excludes)
-
     @staticmethod
     def create_structure():
         """ """
         return {
             "query": {
-                "bool": {"should": list(), "must": list(), "must_not": list(), "filter": list()}
+                "bool": {
+                    "should": list(),
+                    "must": list(),
+                    "must_not": list(),
+                    "filter": list(),
+                }
             },
             "size": 100,
             "from": 0,

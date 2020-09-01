@@ -154,6 +154,20 @@ class SearchParameterDefinition(object):
 class SearchParameter(object):
     """ """
 
+    __slots__ = (
+        "name",
+        "code",
+        "expression",
+        "type",
+        "modifier",
+        "comparator",
+        "target",
+        "xpath",
+        "multiple_or",
+        "multiple_and",
+        "component",
+    )
+
     name: str
     code: str
     expression: str

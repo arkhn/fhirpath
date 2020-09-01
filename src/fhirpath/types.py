@@ -79,7 +79,7 @@ class FhirBoolean(FhirPrimitiveType):
         res = re.match(self.__regex__, self)
         if not res:
             raise ValueError(
-                "Invalid FHIR boolean value! should true or false", str(self)
+                f"Invalid boolean value: expected true or false, got {self}",
             )
 
     def to_python(self) -> bool:

@@ -528,7 +528,9 @@ class PathInfoContextProxy(Proxy):
 class BundleWrapper:
     """ """
 
-    def __init__(self, engine, result, includes, url: URL, bundle_type="searchset"):
+    def __init__(
+        self, engine, result, includes: List, url: URL, bundle_type="searchset",
+    ):
         """ """
         self.fhir_version = engine.fhir_release
         self.bundle_model = lookup_fhir_class("Bundle", fhir_release=self.fhir_version)

@@ -42,7 +42,6 @@ from fhirpath.storage import SEARCH_PARAMETERS_STORAGE
 __author__ = "Md Nazrul Islam <email2nazrul@gmail.com>"
 
 escape_comma_replacer: Text = "_ESCAPE_COMMA_"
-uri_scheme: Pattern = re.compile(r"^https?://", re.I)
 value_prefixes: Set[str] = {
     "eq",
     "ne",
@@ -54,12 +53,15 @@ value_prefixes: Set[str] = {
     "eb",
     "ap",
 }
+uri_scheme: Pattern = re.compile(r"^https?://", re.I)
 has_dot_as: Pattern = re.compile(r"\.as\([a-z]+\)$", re.I ^ re.U)
 has_dot_is: Pattern = re.compile(r"\.is\([a-z]+\)$", re.I ^ re.U)
 has_dot_where: Pattern = re.compile(r"\.where\([a-z\=\'\"()]+\)", re.I ^ re.U)
 parentheses_wrapped: Pattern = re.compile(r"^\(.+\)$")
-default_result_count = 100
+
 logger = logging.getLogger("fhirpath.search")
+
+DEFAULT_RESULT_COUNT = 100
 
 
 def has_escape_comma(val):
@@ -84,33 +86,39 @@ class SearchContext(object):
     def __init__(self, engine, resource_type, unrestricted=False, async_result=False):
         """ """
         self.engine = engine
-        self.resource_types = [resource_type]
+        self.resource_types = [resource_type] if resource_type else []
         self.unrestricted = unrestricted
         self.async_result = async_result
 
-        if resource_type is None:
-            self.resource_types = []
-            # "Resource" gives all common search parameters
-            self.definitions = [
-                Search.get_parameters_definition(self.engine.fhir_release, "Resource")
-            ]
+        self.definitions = self.get_parameters_definition(self.engine.fhir_release)
 
-        else:
-            self.definitions = [
-                Search.get_parameters_definition(
-                    self.engine.fhir_release, resource_type
-                )
-            ]
+    def get_parameters_definition(
+        self, fhir_release: FHIR_VERSION,
+    ) -> List[ResourceSearchParameterDefinition]:
+        """ """
+        fhir_release = FHIR_VERSION.normalize(fhir_release)
+        storage = SEARCH_PARAMETERS_STORAGE.get(fhir_release.name)
+
+        if storage.empty():
+            """Need to load first """
+            from fhirpath.fhirspec import FHIRSearchSpecFactory
+
+            spec = FHIRSearchSpecFactory.from_release(fhir_release.name)
+            spec.write()
+
+        # if self.resource_types is empty, return the searchparams definitions of the generic "Resource" type.
+        return [
+            storage.get(resource_type)
+            for resource_type in (self.resource_types or ["Resource"])
+        ]
 
     def augment_with_types(self, resource_types: List[str]):
         if len(resource_types) == 0:
             return
 
         self.resource_types.extend(resource_types)
-        self.definitions = [
-            Search.get_parameters_definition(self.engine.fhir_release, t)
-            for t in resource_types
-        ]
+        self.definitions = self.get_parameters_definition(self.engine.fhir_release)
+
         self.search_params_intersection = [
             sp for sp in self.definitions[0] if all(sp in d for d in self.definitions)
         ]
@@ -306,10 +314,10 @@ class Search(object):
         else:
             raise Invalid
 
-        self.reverse_chaining_results: Optional[Dict[str, Set[str]]] = None
-        self.result_params: Dict = dict()
+        self.result_params: Dict[str, str] = dict()
         self.search_params = None
 
+        self.reverse_chaining_results: Optional[Dict[str, Set[str]]] = None
         self.main_query = None
         self.include_queries = None
 
@@ -318,6 +326,11 @@ class Search(object):
         additional_resource_types = self.result_params.get("_type")
         if additional_resource_types:
             self.context.augment_with_types(additional_resource_types)
+
+    @classmethod
+    def from_params(cls, context, params):
+        """ """
+        return cls(context, params=params)
 
     @staticmethod
     def validate_params(context, query_string, params):
@@ -335,6 +348,28 @@ class Search(object):
             raise ValidationError(
                 "Only value from one of arguments (´query_string´, ´params´) is accepted"
             )
+
+    @staticmethod
+    def parse_query_string(query_string, allow_none=False):
+        """
+        param:request
+        param:allow_none
+        """
+        params = MultiDict()
+
+        for q in query_string.split("&"):
+            parts = q.split("=")
+            param_name = unquote_plus(parts[0])
+            try:
+                value = parts[1] and unquote_plus(parts[1]) or None
+            except IndexError:
+                if not allow_none:
+                    continue
+                value = None
+
+            params.add(param_name, value)
+
+        return params
 
     def prepare_params(self, all_params):
         """making search, sort, limit, params
@@ -408,52 +443,6 @@ class Search(object):
             self.result_params["_containedType"] = _containedType
 
         self.search_params = MultiDictProxy(all_params)
-
-    @staticmethod
-    def parse_query_string(query_string, allow_none=False):
-        """
-        param:request
-        param:allow_none
-        """
-        params = MultiDict()
-
-        for q in query_string.split("&"):
-            parts = q.split("=")
-            param_name = unquote_plus(parts[0])
-            try:
-                value = parts[1] and unquote_plus(parts[1]) or None
-            except IndexError:
-                if not allow_none:
-                    continue
-                value = None
-
-            params.add(param_name, value)
-
-        return params
-
-    @classmethod
-    def from_query_string(cls, query_string):
-        """ """
-
-    @classmethod
-    def from_params(cls, context, params):
-        """ """
-        return cls(context, params=params)
-
-    @staticmethod
-    def get_parameters_definition(fhir_release: FHIR_VERSION, resource_type: str):
-        """ """
-        fhir_release = FHIR_VERSION.normalize(fhir_release)
-        storage = SEARCH_PARAMETERS_STORAGE.get(fhir_release.name)
-
-        if storage.empty():
-            """Need to load first """
-            from fhirpath.fhirspec import FHIRSearchSpecFactory
-
-            spec = FHIRSearchSpecFactory.from_release(fhir_release.name)
-            spec.write()
-
-        return storage.get(resource_type)
 
     def build(self):
         """Create QueryBuilder from search query string"""
@@ -529,13 +518,13 @@ class Search(object):
                     f"search parameter {from_resource_type}.{ref_param_raw} is unknown"
                 )
             # Build a Q_ (query) object to join the resource based on reference ids.
-            builder = Q_([from_resource_type], from_context.engine)
+            builder = Q_(from_resource_type, from_context.engine)
             normalized_data = from_context.normalize_param(value_param_raw, value)
             terms_container: List = []
             self.add_term(normalized_data, terms_container)
 
             builder = builder.where(*terms_container)
-            builder = builder.limit(default_result_count)
+            builder = builder.limit(DEFAULT_RESULT_COUNT)
 
             result: QueryResult = builder(
                 unrestricted=self.context.unrestricted,
@@ -606,7 +595,9 @@ class Search(object):
                 self.add_term(normalized_data, terms)
 
             builder = builder.where(*terms)
-            builder = builder.limit(default_result_count)
+
+            # FIXME: find a better way to handle the limit
+            builder = builder.limit(DEFAULT_RESULT_COUNT)
 
             result: QueryResult = builder(
                 unrestricted=self.context.unrestricted,
@@ -1243,7 +1234,8 @@ class Search(object):
     def create_period_term(self, path_, param_value, modifier):
         if isinstance(param_value, list):
             terms = [
-                self.single_valued_period_term(path_, value, modifier) for value in param_value
+                self.single_valued_period_term(path_, value, modifier)
+                for value in param_value
             ]
             return G_(*terms, path=path_, type_=GroupType.COUPLED)
 
@@ -1256,7 +1248,10 @@ class Search(object):
         operator, original_value = value
 
         if isinstance(original_value, list):
-            terms = [self.single_valued_period_term(path_, val, modifier) for val in original_value]
+            terms = [
+                self.single_valued_period_term(path_, val, modifier)
+                for val in original_value
+            ]
             # IN Like Group
             return G_(*terms, path=path_, type_=GroupType.DECOUPLED)
 
@@ -1451,7 +1446,7 @@ class Search(object):
     def attach_limit_terms(self, builder):
         """ """
         if "_count" not in self.result_params:
-            return builder.limit(default_result_count)
+            return builder.limit(DEFAULT_RESULT_COUNT)
 
         offset = 0
         if "page" in self.result_params:
@@ -1470,7 +1465,9 @@ class Search(object):
             for el in self.result_params["_elements"]
             for r in self.context.resource_types
         ]
-        mandatories = [f"{r}.id" for r in self.context.resource_types]
+        mandatories = [
+            f"{r}.{el}" for el in ["id"] for r in self.context.resource_types
+        ]
         return builder.select(*paths, *mandatories)
 
     def attach_summary_terms(self, builder):
@@ -1481,18 +1478,32 @@ class Search(object):
         if self.result_params["_summary"] in ["count", "false"]:
             return builder
 
-        if self.result_params["_summary"] == "data":
-            # TODO should we include all elements except text instead of exluding?
-            for r in self.context.resource_types:
-                builder = builder.exclude(f"{r}.text")
-            return builder
-
         specs = [
             lookup_fhir_resource_spec(r, True, FHIR_VERSION.R4)
             for r in self.context.resource_types
         ]
 
-        if self.result_params["_summary"] == "true":
+        def get_attr_paths(attribute):
+            if attribute.path.endswith("[x]"):
+                for prop in attribute.as_properties():
+                    return [
+                        f"{prop.path.rsplit('.', 1)[0]}.{prop.name}"
+                        for prop in attribute.as_properties()
+                    ]
+            else:
+                return [attribute.path]
+
+        if self.result_params["_summary"] in ("data", "true"):
+
+            def should_include(attr):
+                if self.result_params["_summary"] == "data":
+                    return (
+                        not attr.path.endswith(".text")
+                        and not attr.is_main_profile_element
+                    )
+                elif self.result_params["_summary"] == "true":
+                    return attr.is_summary
+
             summary_elements = [
                 f"{r}.{attr}"
                 for r in self.context.resource_types
@@ -1501,18 +1512,8 @@ class Search(object):
 
             # filter all summary attributes
             summary_attributes = [
-                attr for spec in specs for attr in spec.elements if attr.is_summary
+                attr for spec in specs for attr in spec.elements if should_include(attr)
             ]
-
-            def get_attr_paths(attribute):
-                if attribute.path.endswith("[x]"):
-                    for prop in attribute.as_properties():
-                        return [
-                            f"{prop.path.rsplit('.', 1)[0]}.{prop.name}"
-                            for prop in attribute.as_properties()
-                        ]
-                else:
-                    return [attribute.path]
 
             # append summary attributes' paths to summary_elements
             summary_elements.extend(
@@ -1551,37 +1552,39 @@ class Search(object):
         # reverse chaining (_has)
         if self.result_params.get("_has"):
             has_queries = self.has()
-            # compute the intersection of referenced patients' ID from the result of _has queries.
+            # compute the intersection of referenced resources' ID from the result of _has queries.
             self.reverse_chaining_results = {}
             for ref_param, q in has_queries:
-                query_result = q.fetchall()
+                res = q.fetchall()
                 self.reverse_chaining_results = {
-                    r: set(id_list).intersection(self.reverse_chaining_results[r])
-                    if self.reverse_chaining_results.get(r)
-                    else id_list
-                    for r, id_list in query_result.extract_references(ref_param).items()
-                    if r in self.context.resource_types
+                    r_type: set(ids).intersection(self.reverse_chaining_results[r_type])
+                    if self.reverse_chaining_results.get(r_type)
+                    else set(ids)
+                    for r_type, ids in res.extract_references(ref_param).items()
+                    if r_type in self.context.resource_types
                 }
 
             # if the _has predicates did not match any documents, return an empty result
+            # FIXME: we use the result of the last _has query to build the empty bundle, but
+            # we should be more explicit about the query context.
             if not self.reverse_chaining_results:
-                return self.response(query_result, [])
+                return self.response(res, [])
 
         # MAIN QUERY
         self.main_query = self.build()
+
         # TODO handle count with _includes
         if self.result_params.get("_summary") == "count":
             main_result = self.main_query.count()
         else:
             main_result = self.main_query.fetchall()
+        assert main_result is not None
 
         # _include
         self.include_queries = self.include(main_result)
-        include_results: List[EngineResult] = []
-        for q in self.include_queries:
-            include_results.append(q.fetchall())
-
-        assert main_result is not None
+        include_results: List[EngineResult] = [
+            q.fetchall() for q in self.include_queries
+        ]
 
         return self.response(main_result, include_results)
 

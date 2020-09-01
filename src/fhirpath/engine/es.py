@@ -53,9 +53,7 @@ class ElasticsearchEngine(Engine):
         )
         if query_type == EngineQueryType.DML:
             raw_result = self.connection.fetch(self.get_index_name(), compiled)
-        elif (
-            query_type == EngineQueryType.COUNT
-        ):  # TODO can we use that for _summary=count?
+        elif query_type == EngineQueryType.COUNT:
             raw_result = self.connection.count(self.get_index_name(), compiled)
         else:
             raise NotImplementedError

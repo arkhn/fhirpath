@@ -13,14 +13,12 @@ from fhirpath.utils import FHIR_VERSION, builder
 
 from .constraints import (
     required_finalized,
-    # required_from_resource,
     required_not_finalized,
 )
 from .exceptions import MultipleResultsFound
 from .fql.expressions import and_, fql, sort_
 from .fql.types import (
     ElementPath,
-    ExcludeClause,
     FromClause,
     LimitClause,
     SelectClause,
@@ -53,7 +51,6 @@ class Query(ABC):
         fhir_release: FHIR_VERSION,
         from_: FromClause,
         select: SelectClause,
-        exclude: ExcludeClause,
         where: WhereClause,
         sort: SortClause,
         limit: LimitClause,
@@ -63,7 +60,6 @@ class Query(ABC):
         self.fhir_release: FHIR_VERSION = FHIR_VERSION.normalize(fhir_release)
         self._from: FromClause = from_
         self._select: SelectClause = select
-        self._exclude: ExcludeClause = exclude
         self._where: WhereClause = where
         self._sort: SortClause = sort
         self._limit: LimitClause = limit
@@ -77,12 +73,13 @@ class Query(ABC):
         """Create Query object from QueryBuilder.
         Kind of reverse process"""
         if not IQueryBuilder(builder)._finalized:
-            raise ConstraintNotSatisfied("QueryBuilder object must be in finalized state")
+            raise ConstraintNotSatisfied(
+                "QueryBuilder object must be in finalized state"
+            )
         query = cls(
             builder._engine.fhir_release,  # type: ignore
             builder._from,  # type: ignore
             builder._select,  # type: ignore
-            builder._exclude,  # type: ignore
             builder._where,  # type: ignore
             builder._sort,  # type: ignore
             builder._limit,  # type: ignore
@@ -100,10 +97,6 @@ class Query(ABC):
     def get_select(self) -> SelectClause:
         """ """
         return self._select
-
-    def get_exclude(self) -> ExcludeClause:
-        """ """
-        return self._exclude
 
     def get_sort(self) -> SortClause:
         """ """
@@ -149,7 +142,6 @@ class QueryBuilder(ABC):
 
         self._from: FromClause = FromClause()
         self._select: SelectClause = SelectClause()
-        self._exclude: ExcludeClause = ExcludeClause()
         self._where: WhereClause = WhereClause()
         self._sort: SortClause = SortClause()
         self._limit: LimitClause = LimitClause()
@@ -172,7 +164,7 @@ class QueryBuilder(ABC):
 
         if self._engine is None:
             raise ConstraintNotSatisfied(
-                "Object from '{0!s}' must be binded with engine".format(self.__class__.__name__)
+                f"Object from '{self.__class__.__name__}' must be bound with engine"
             )
         # xxx: do any validation?
         if len(self._select) == 0:
@@ -181,9 +173,6 @@ class QueryBuilder(ABC):
 
         # Finalize path elements
         [se.finalize(self._engine) for se in self._select]
-
-        # Finalize excluded elements
-        [se.finalize(self._engine) for se in self._exclude]
 
         # Finalize where terms on demand
         [wr.finalize(self._engine) for wr in self._where]
@@ -206,21 +195,24 @@ class QueryBuilder(ABC):
         newone._limit = copy(self._limit)
         newone._from = copy(self._from)
         newone._select = copy(self._select)
-        newone._exclude = copy(self._exclude)
         newone._where = copy(self._where)
         newone._sort = copy(self._sort)
 
         return newone
 
     @builder
-    def from_(self, resource_types: List[str]):
+    def from_(self, resource_type: Union[str, List[str]]):
         """ """
         required_not_finalized(self)
 
         assert self._engine
-        for resource_type in resource_types:
+        if isinstance(resource_type, str):
             model = Model.create(resource_type, fhir_release=self._engine.fhir_release)
             self._from.append((resource_type, model))
+        else:
+            for r_type in resource_type:
+                model = Model.create(r_type, fhir_release=self._engine.fhir_release)
+                self._from.append((r_type, model))
 
     @builder
     def select(self, *args):
@@ -234,19 +226,6 @@ class QueryBuilder(ABC):
             if not (el_path.star or el_path.non_fhir):
                 self._validate_root_path(str(el_path))
             self._select.append(el_path)
-
-    @builder
-    def exclude(self, *args):
-        """ """
-        self._pre_check()
-
-        for el_path in args:
-            if not IElementPath.providedBy(el_path):
-                el_path = ElementPath(el_path)
-            # Make sure correct root path
-            if not (el_path.star or el_path.non_fhir):
-                self._validate_root_path(str(el_path))
-            self._exclude.append(el_path)
 
     @builder
     def where(self, *args, **kwargs):
@@ -320,7 +299,9 @@ class QueryBuilder(ABC):
             result_factory = AsyncQueryResult
         if TYPE_CHECKING:
             assert self._engine
-        result = result_factory(query=query, engine=self._engine, unrestricted=unrestricted)
+        result = result_factory(
+            query=query, engine=self._engine, unrestricted=unrestricted
+        )
         return result
 
     def _pre_check(self):
@@ -342,12 +323,12 @@ class QueryBuilder(ABC):
         if self._from:
             match = any(alias == root_path for alias, _ in self._from)
         else:
-            # FIXME ugly
+            # FIXME: find a better way to validate that we're searching on all resources
             match = root_path == "Resource"
 
         if not match:
             raise ValidationError(
-                "Root path '{0!s}' must be matched with from models".format(root_path)
+                f"Root path '{root_path}' must be matched with from models"
             )
 
     def _validate_term_path(self, term):
@@ -371,8 +352,7 @@ class QueryResult(ABC):
 
     def fetchall(self):
         """ """
-        result = self._engine.execute(self._query, self._unrestricted)
-        return result
+        return self._engine.execute(self._query, self._unrestricted)
 
     def single(self):
         """Will return the single item in the input if there is just one item.
@@ -425,17 +405,17 @@ class QueryResult(ABC):
         """Returns a collection with a single value which is the integer count of
         the number of items in the input collection.
         Returns 0 when the input collection is empty."""
-        result = self._engine.execute(self._query, self._unrestricted, EngineQueryType.COUNT)
-        # return result.header.total
-        return result
+        return self._engine.execute(
+            self._query, self._unrestricted, EngineQueryType.COUNT
+        )
 
     def empty(self):
         """Returns true if the input collection is empty ({ }) and false otherwise."""
-        return self.count() == 0
+        return self.count().header.total == 0
 
     def __len__(self):
         """ """
-        return self.count()
+        return self.count().header.total
 
     def OFF__getitem__(self, key):
         """
@@ -538,21 +518,23 @@ class AsyncQueryResult(QueryResult):
 
     async def count(self):
         """ """
-        result = await self._engine.execute(self._query, self._unrestricted, EngineQueryType.COUNT)
-        return result.header.total
+        result = await self._engine.execute(
+            self._query, self._unrestricted, EngineQueryType.COUNT
+        )
+        return result
 
     async def empty(self):
         """Returns true if the input collection is empty ({ }) and false otherwise."""
-        return await self.count() == 0
+        return await self.count().header.total == 0
 
     def __len__(self):
         """ """
-        return self.count()
+        return self.count().header.total
 
 
-def Q_(resource_names=None, engine=None):
+def Q_(resource: Optional[Union[str, List[str]]] = None, engine=None):
     """ """
     builder = Query._builder(engine)
-    if resource_names:
-        builder = builder.from_(resource_names)
+    if resource:
+        builder = builder.from_(resource)
     return builder

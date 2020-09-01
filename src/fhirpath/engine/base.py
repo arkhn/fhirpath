@@ -133,7 +133,8 @@ class EngineResult(object):
         def browse(node, path):
             parts = path.split(".", 1)
 
-            if "where(" in parts[0]:
+            # FIXME: we don't handle resolving reference to check their types yet.
+            if parts[0].startswith("where("):
                 parts = parts[1:]
 
             if len(parts) == 0:
@@ -146,6 +147,7 @@ class EngineResult(object):
         def append_ref(ref_attr):
             if "reference" not in ref_attr:
                 raise Exception(f"attribute {ref_attr} is not a Reference")
+            # FIXME: this does not work with references using absolute URLs
             referenced_resource, _id = ref_attr["reference"].split("/")
             ids[referenced_resource].append(_id)
 
