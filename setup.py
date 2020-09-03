@@ -53,7 +53,7 @@ requirements = [
     "zope.component>=4.5",
     "multidict",
     "decorator",
-    "fhirspec>=0.2.1",
+    "fhirspec @ git+https://github.com/arkhn/fhirspec@sv/handle-backbone-elements#egg=fhirspec",
     "fhir.resources>=6.0.0b3,<7.0",
     "jsonpatch",
     "yarl",
