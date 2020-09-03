@@ -21,4 +21,5 @@ def get_version():
 
 __author__ = """Md Nazrul Islam"""
 __email__ = "email2nazrul@gmail.com"
-__version__ = get_version()
+# __version__ = get_version()
+__version__ = "0.8.0.alpha1"
