@@ -367,9 +367,7 @@ class Term(BaseTerm):
                 OPERATOR.ge,
             ):
                 raise ValidationError(
-                    "Operator '{0!s}' is allowed for value type '{1!s}'".format(
-                        self.comparison_operator.__name__, self.path.context.type_name
-                    )
+                    f"Operator '{self.comparison_operator}' is allowed for value type '{self.path.context.type_name}'"
                 )
         else:
             # don't have usecase yet!
