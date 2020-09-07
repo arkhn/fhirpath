@@ -53,8 +53,8 @@ requirements = [
     "zope.component>=4.5",
     "multidict",
     "decorator",
-    "fhirspec @ git+https://github.com/arkhn/fhirspec@sv/handle-backbone-elements#egg=fhirspec",
-    "fhir.resources>=6.0.0b3,<7.0",
+    "fhirspec @ git+https://github.com/arkhn/fhirspec@0.2.3#egg=fhirspec",
+    "fhir.resources @ git+https://github.com/arkhn/fhir.resources@0.2.3#egg=fhir.resources",
     "jsonpatch",
     "yarl",
     "isodate",
@@ -97,7 +97,7 @@ development_requirements = [
 
 setup(
     name="fhirpath",
-    version="0.8.0.alpha1",
+    version="0.8.0",
     author="Md Nazrul Islam",
     author_email="email2nazrul@gmail.com",
     classifiers=[
