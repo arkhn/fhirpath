@@ -203,9 +203,9 @@ class SearchContext(object):
                 param_value = raw_value
 
             value_parts = param_value.split(",")
-            comparison_operator = "eq"
             bucket_ = list()
             for val in value_parts:
+                comparison_operator = "eq"
                 if escape_:
                     val_ = val.replace(escape_comma_replacer, "\\,")
                 else:
