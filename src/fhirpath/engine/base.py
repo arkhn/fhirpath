@@ -17,6 +17,7 @@ from fhirpath.interfaces.engine import (
 from fhirpath.fhirspec import SearchParameter
 from fhirpath.query import Query
 from fhirpath.thirdparty import Proxy
+from fhirpath.exceptions import ValidationError
 
 __author__ = "Md Nazrul Islam <email2nazrul@gmail.com>"
 
@@ -121,6 +122,22 @@ class EngineResult(object):
         self.header = header
         self.body = body
 
+    def extract_ids(self) -> Dict[str, List[str]]:
+        ids: Dict = defaultdict(list)
+        for row in self.body:
+            resource_id = row[0].get("id")
+            resource_type = row[0].get("resourceType")
+            if not resource_id:
+                raise ValidationError(
+                    "failed to extract IDs from EngineResult: missing id in resource"
+                )
+            if not resource_type:
+                raise ValidationError(
+                    "failed to extract IDs from EngineResult: missing resourceType in resource"
+                )
+            ids[resource_type].append(resource_id)
+        return ids
+
     def extract_references(self, search_param: SearchParameter) -> Dict[str, List[str]]:
         """Takes a search parameter as input and extract all targeted references
 
@@ -146,7 +163,7 @@ class EngineResult(object):
 
         def append_ref(ref_attr):
             if "reference" not in ref_attr:
-                raise Exception(f"attribute {ref_attr} is not a Reference")
+                raise ValidationError(f"attribute {ref_attr} is not a Reference")
             # FIXME: this does not work with references using absolute URLs
             referenced_resource, _id = ref_attr["reference"].split("/")
             ids[referenced_resource].append(_id)

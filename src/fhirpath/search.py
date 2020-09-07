@@ -430,7 +430,7 @@ class Search(object):
             self.result_params["_has"] = _has
         [all_params.pop(k) for k, _ in _has]
 
-        _revinclude = all_params.popone("_revinclude", None)
+        _revinclude = all_params.popall("_revinclude", None)
         if _revinclude:
             self.result_params["_revinclude"] = _revinclude
 
@@ -591,6 +591,71 @@ class Search(object):
                 # for each resource, create a term to filter IDs
                 normalized_data = search_context.normalize_param(
                     "_id", ",".join(ids[resource_type])
+                )
+                self.add_term(normalized_data, terms)
+
+            builder = builder.where(*terms)
+
+            # FIXME: find a better way to handle the limit
+            builder = builder.limit(DEFAULT_RESULT_COUNT)
+
+            result: QueryResult = builder(
+                unrestricted=self.context.unrestricted,
+                async_result=self.context.async_result,
+            )
+            include_queries.append(result)
+
+        return include_queries
+
+    # FIXME: sorting, paginating and large results are not handled yet.
+    def rev_include(self, main_query_result: EngineResult) -> List[QueryResult]:
+        """
+        This function handles the _revinclude keyword.
+        """
+        include_queries: List[QueryResult] = []
+        for inc in self.result_params.get("_revinclude", []):
+            # Parse the _revinclude input parameter
+            parts = inc.split(":")
+            if len(parts) < 2 or len(parts) > 3:
+                raise ValidationError(
+                    f"bad _revinclude param '{inc}', should be Resource:search_param[:target_type]"
+                )
+
+            from_resource_type = parts[0]
+            ref_param_raw: str = parts[1]
+            target_ref_type = parts[2] if len(parts) == 3 else None
+
+            # Get the search parameter definition
+            # it must be of type reference
+            ref_param: SearchParameter = SearchContext(
+                self.context.engine, from_resource_type
+            )._get_search_param_definitions(ref_param_raw)[0]
+            if not ref_param:
+                raise ValidationError(
+                    f"search parameter {from_resource_type}.{ref_param_raw} is unknown"
+                )
+            if ref_param.type != "reference":
+                raise ValidationError(
+                    f"search parameter {from_resource_type}.{ref_param_raw} "
+                    f"must be of type 'reference', got {ref_param.type}"
+                )
+            elif target_ref_type and target_ref_type not in ref_param.target:
+                raise ValidationError(
+                    f"the search param {from_resource_type}.{ref_param_raw} may refer"
+                    f" to {', '.join(ref_param.target)}, not to {target_ref_type}"
+                )
+
+            # Extract IDs from the main query result
+            ids = main_query_result.extract_ids()
+
+            # Build a Q_ (query) object to join the resource based on reference ids.
+            builder = Q_([from_resource_type], self.context.engine)
+            terms: List = []
+            for resource_type, resource_ids in ids.items():
+                search_context = SearchContext(self.context.engine, from_resource_type)
+                # for each resource, create a term to filter reference ids
+                normalized_data = search_context.normalize_param(
+                    ref_param_raw, ",".join(resource_ids)
                 )
                 self.add_term(normalized_data, terms)
 
@@ -1586,7 +1651,14 @@ class Search(object):
             q.fetchall() for q in self.include_queries
         ]
 
-        return self.response(main_result, include_results)
+        # _revInclude
+        self.rev_include_queries = self.rev_include(main_result)
+        rev_include_results: List[EngineResult] = [
+            q.fetchall() for q in self.rev_include_queries
+        ]
+
+        all_includes = [*include_results, *rev_include_results]
+        return self.response(main_result, all_includes)
 
 
 class AsyncSearch(Search):
