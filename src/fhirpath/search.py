@@ -1,7 +1,7 @@
 # _*_ coding: utf-8 _*_
 import logging
 import re
-from typing import Dict, Pattern, Set, Text, List, Optional, Tuple
+from typing import Dict, Pattern, Set, Text, List, Optional, Tuple, Union
 from urllib.parse import unquote_plus
 
 from multidict import MultiDict, MultiDictProxy
@@ -16,6 +16,7 @@ from fhirpath.enums import (
 )
 from fhirpath.exceptions import ValidationError
 from fhirpath.fhirspec import (
+    search_param_prefixes,
     lookup_fhir_resource_spec,
     SearchParameter,
     ResourceSearchParameterDefinition,
@@ -42,17 +43,6 @@ from fhirpath.storage import SEARCH_PARAMETERS_STORAGE
 __author__ = "Md Nazrul Islam <email2nazrul@gmail.com>"
 
 escape_comma_replacer: Text = "_ESCAPE_COMMA_"
-value_prefixes: Set[str] = {
-    "eq",
-    "ne",
-    "gt",
-    "lt",
-    "ge",
-    "le",
-    "sa",
-    "eb",
-    "ap",
-}
 uri_scheme: Pattern = re.compile(r"^https?://", re.I)
 has_dot_as: Pattern = re.compile(r"\.as\([a-z]+\)$", re.I ^ re.U)
 has_dot_is: Pattern = re.compile(r"\.is\([a-z]+\)$", re.I ^ re.U)
@@ -172,7 +162,7 @@ class SearchContext(object):
                 raw_value = raw_value[0]
 
             values: List = list()
-            self.normalize_param_value(raw_value, values)
+            self.normalize_param_value(raw_value, sp, values)
 
             if len(values) == 1:
                 param_value_ = values[0]
@@ -184,12 +174,14 @@ class SearchContext(object):
             normalized_params.append((_path, param_value_, modifier_))
         return normalized_params
 
-    def normalize_param_value(self, raw_value, container):
+    def normalize_param_value(
+        self, raw_value: Union[List, str], search_param: SearchParameter, container
+    ):
         """ """
         if isinstance(raw_value, list):
-            bucket = list()
+            bucket: List[str] = list()
             for rv in raw_value:
-                self.normalize_param_value(rv, bucket)
+                self.normalize_param_value(rv, search_param, bucket)
             if len(bucket) == 1:
                 container.append(bucket[0])
             else:
@@ -211,8 +203,8 @@ class SearchContext(object):
                 else:
                     val_ = val
 
-                for prefix in value_prefixes:
-                    if val_.startswith(prefix):
+                for prefix in search_param_prefixes:
+                    if val_.startswith(prefix) and search_param.support_prefix():
                         comparison_operator = prefix
                         val_ = val_[2:]
                         break
@@ -260,7 +252,7 @@ class SearchContext(object):
             value_parts[0],
         ]
         part1_param_value = list()
-        self.normalize_param_value(part1[1], part1_param_value)
+        self.normalize_param_value(part1[1], param_def, part1_param_value)
         if len(part1_param_value) == 1:
             part1_param_value = part1_param_value[0]
         composite_bucket.append(
@@ -274,7 +266,7 @@ class SearchContext(object):
             ]
             part2.append(part_)
         part2_param_value = list()
-        self.normalize_param_value(part2[0][1], part2_param_value)
+        self.normalize_param_value(part2[0][1], param_def, part2_param_value)
 
         if len(part2_param_value) == 1:
             part2_param_value = part2_param_value[0]
