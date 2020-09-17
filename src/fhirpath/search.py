@@ -753,13 +753,12 @@ class Search(object):
         """ """
         operator_, original_value = value
         if isinstance(original_value, list):
-            terms_ = list()
-            for val in original_value:
-                term_ = self.single_valued_identifier_term(path_, val, modifier)
-                terms_.append(term_)
+            terms = [
+                self.single_valued_identifier_term(path_, val, modifier)
+                for val in original_value
+            ]
             # IN Like Group
-            group = G_(*terms_, path=path_, type_=GroupType.DECOUPLED)
-            return group
+            return G_(*terms, path=path_, type_=GroupType.DECOUPLED)
 
         has_pipe = "|" in original_value
         terms = list()
