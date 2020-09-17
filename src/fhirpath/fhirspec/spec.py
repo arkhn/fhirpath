@@ -10,7 +10,7 @@ import pathlib
 import re
 from collections import defaultdict
 from copy import copy
-from typing import List
+from typing import List, Dict
 
 from fhirpath.enums import FHIR_VERSION
 from fhirpath.interfaces import IStorage
@@ -22,6 +22,18 @@ logger = logging.getLogger("fhirpath.fhrspec")
 # allow to skip some profiles by matching against their url (used while WiP)
 skip_because_unsupported = [r"SimpleQuantity"]
 HTTP_URL = re.compile(r"^https?://", re.IGNORECASE)
+
+search_param_prefixes: Dict[str, List[str]] = {
+    "eq": ["number", "date", "quantity"],
+    "ne": ["number", "date", "quantity"],
+    "gt": ["number", "date", "quantity"],
+    "lt": ["number", "date", "quantity"],
+    "ge": ["number", "date", "quantity"],
+    "le": ["number", "date", "quantity"],
+    "sa": ["number", "date", "quantity"],
+    "eb": ["number", "date", "quantity"],
+    "ap": ["number", "date", "quantity"],
+}
 
 
 class FHIRSearchSpec(object):
@@ -216,6 +228,9 @@ class SearchParameter(object):
     def clone(self):
         """ """
         return self.__copy__()
+
+    def support_prefix(self, prefix):
+        return self.type in search_param_prefixes[prefix]
 
     def __copy__(self):
         """ """
