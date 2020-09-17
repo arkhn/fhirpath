@@ -294,7 +294,7 @@ class Search(object):
 
         self.context = ISearchContext(context)
         if isinstance(params, MultiDict):
-            pass
+            all_params = params
         elif isinstance(query_string, str):
             all_params = Search.parse_query_string(query_string, False)
         elif isinstance(params, (tuple, list)):
