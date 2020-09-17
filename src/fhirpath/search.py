@@ -253,7 +253,11 @@ class SearchContext(object):
         ]
         part1_param_value = list()
         self.normalize_param_value(part1[1], param_def, part1_param_value)
-        part1_param_value = part1_param_value[0]
+        if len(part1_param_value) == 1:
+            part1_param_value = part1_param_value[0]
+        composite_bucket.append(
+            (self._dotted_path_to_path_context(part1[0]), part1_param_value, modifier)
+        )
         part2 = list()
         for expr in param_def.component[1]["expression"].split("|"):
             part_ = [
