@@ -10,7 +10,7 @@ import pathlib
 import re
 from collections import defaultdict
 from copy import copy
-from typing import List, Set
+from typing import TYPE_CHECKING, List, Set
 
 from fhirpath.enums import FHIR_VERSION
 from fhirpath.interfaces import IStorage
@@ -39,8 +39,7 @@ search_param_prefixes: Set[str] = {
 
 
 class FHIRSearchSpec(object):
-    """https://www.hl7.org/fhir/searchparameter-registry.html
-    """
+    """https://www.hl7.org/fhir/searchparameter-registry.html"""
 
     def __init__(
         self, source: pathlib.Path, fhir_release: FHIR_VERSION, storage: MemoryStorage
@@ -107,6 +106,20 @@ class FHIRSearchSpec(object):
 class SearchParameterDefinition(object):
     """ """
 
+    if TYPE_CHECKING:
+        spec = None
+        name: None
+        code: None
+        expression_map: None
+        type: None
+        modifier: None
+        comparator: None
+        target: None
+        xpath: None
+        multiple_or: None
+        multiple_and: None
+        component: None
+
     __slots__ = (
         "spec",
         "name",
@@ -167,6 +180,19 @@ class SearchParameterDefinition(object):
 
 class SearchParameter(object):
     """ """
+
+    if TYPE_CHECKING:
+        name: None
+        code: None
+        expression: None
+        type: None
+        modifier: None
+        comparator: None
+        target: None
+        xpath: None
+        multiple_or: None
+        multiple_and: None
+        component: None
 
     __slots__ = (
         "name",

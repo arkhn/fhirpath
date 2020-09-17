@@ -1,11 +1,11 @@
 # _*_ coding: utf-8 _*_
 import logging
 import re
-from typing import Dict, Pattern, Set, Text, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Pattern, Set, Text, Tuple, Union
 from urllib.parse import unquote_plus
 
 from multidict import MultiDict, MultiDictProxy
-from zope.interface import Invalid, implementer
+from zope.interface import implementer
 
 from fhirpath.enums import (
     FHIR_VERSION,
@@ -18,6 +18,7 @@ from fhirpath.exceptions import ValidationError
 from fhirpath.fhirspec import (
     search_param_prefixes,
     lookup_fhir_resource_spec,
+    FHIRSearchSpecFactory,
     SearchParameter,
     ResourceSearchParameterDefinition,
 )
@@ -46,7 +47,7 @@ escape_comma_replacer: Text = "_ESCAPE_COMMA_"
 uri_scheme: Pattern = re.compile(r"^https?://", re.I)
 has_dot_as: Pattern = re.compile(r"\.as\([a-z]+\)$", re.I ^ re.U)
 has_dot_is: Pattern = re.compile(r"\.is\([a-z]+\)$", re.I ^ re.U)
-has_dot_where: Pattern = re.compile(r"\.where\([a-z\=\'\"()]+\)", re.I ^ re.U)
+has_dot_where: Pattern = re.compile(r"\.where\([a-z=\'\"()]+\)", re.I ^ re.U)
 parentheses_wrapped: Pattern = re.compile(r"^\(.+\)$")
 
 logger = logging.getLogger("fhirpath.search")
@@ -90,13 +91,11 @@ class SearchContext(object):
         storage = SEARCH_PARAMETERS_STORAGE.get(fhir_release.name)
 
         if storage.empty():
-            """Need to load first """
-            from fhirpath.fhirspec import FHIRSearchSpecFactory
-
             spec = FHIRSearchSpecFactory.from_release(fhir_release.name)
             spec.write()
 
-        # if self.resource_types is empty, return the searchparams definitions of the generic "Resource" type.
+        # if self.resource_types is empty, return the searchparams
+        # definitions of the generic "Resource" type.
         return [
             storage.get(resource_type)
             for resource_type in (self.resource_types or ["Resource"])
@@ -155,6 +154,7 @@ class SearchContext(object):
                         raw_value, param_def=sp, modifier=modifier_
                     )
                 )
+                continue
 
             if len(raw_value) == 0:
                 raw_value = None
@@ -253,11 +253,7 @@ class SearchContext(object):
         ]
         part1_param_value = list()
         self.normalize_param_value(part1[1], param_def, part1_param_value)
-        if len(part1_param_value) == 1:
-            part1_param_value = part1_param_value[0]
-        composite_bucket.append(
-            (self._dotted_path_to_path_context(part1[0]), part1_param_value, modifier)
-        )
+        part1_param_value = part1_param_value[0]
         part2 = list()
         for expr in param_def.component[1]["expression"].split("|"):
             part_ = [
@@ -293,8 +289,9 @@ class Search(object):
         Search.validate_params(context, query_string, params)
 
         self.context = ISearchContext(context)
+        all_params = None
         if isinstance(params, MultiDict):
-            pass
+            all_params = params
         elif isinstance(query_string, str):
             all_params = Search.parse_query_string(query_string, False)
         elif isinstance(params, (tuple, list)):
@@ -304,7 +301,7 @@ class Search(object):
         elif isinstance(params, MultiDictProxy):
             all_params = params.copy()
         else:
-            raise Invalid
+            raise NotImplementedError
 
         self.result_params: Dict[str, str] = dict()
         self.search_params = None
@@ -377,6 +374,8 @@ class Search(object):
         _contained
         _containedType
         """
+        if all_params is None:
+            return
         _sort = all_params.popall("_sort", [])
         if len(_sort) > 0:
             self.result_params["_sort"] = ",".join(_sort)
@@ -1489,13 +1488,11 @@ class Search(object):
                 if sort_field.startswith("-"):
                     order_ = SortOrderType.DESC
                     sort_field = sort_field[1:]
-
                 for sort_param_def in self.context._get_search_param_definitions(
                     sort_field
                 ):
                     path_ = self.context.resolve_path_context(sort_param_def)
                     terms.append(sort_(path_, order_))
-
         if len(terms) > 0:
             return builder.sort(*terms)
         return builder

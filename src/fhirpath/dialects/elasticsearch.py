@@ -84,7 +84,9 @@ class ElasticSearchDialect(DialectBase):
         qr = query_
 
         if path_context.resource_type == "Resource":
-            # FIXME ugly: no nested query if we search on all types
+            # FIXME ugly: no nested query if we search on all types because
+            # Resource.meta is of type nested but with option "include_in_root"
+            # set to True
             return qr
 
         while True:
@@ -124,7 +126,11 @@ class ElasticSearchDialect(DialectBase):
         if multiple_ is True and not isinstance(value, (list, tuple)):
             value = [value]
 
-        if multiple_:
+        if all_resources:
+            # TODO is there a better way to search on all resource types?
+            # TODO does it work if both all_resources and multiple_ are True?
+            q = {"multi_match": {"query": value, "fields": [path]}}
+        elif multiple_:
             q = {"terms": {path: value}}
         elif match_type == TermMatchType.EXACT:
             q = {"term": {f"{path}.raw": value}}
@@ -328,7 +334,8 @@ class ElasticSearchDialect(DialectBase):
                 )
             )
         if len(query_fragments) == 0:
-            # Search on all types: available searchparams use "Resource" as path.context.resource_type
+            # Search on all types: available searchparams use
+            # "Resource" as path.context.resource_type
             # Use "*" as root_replacer to match any resource across the ES mapping.
             return self.compile_for_single_resource_type(
                 query, resource_type="Resource", mapping=None, root_replacer="*",
@@ -454,6 +461,7 @@ class ElasticSearchDialect(DialectBase):
                                 dotted_path, value
                             )
                         else:
+                            # FIXME find a cleaner way to do that
                             # If root_replacer is "*", we're searching on all resources
                             all_resources = root_replacer == "*"
                             q = ElasticSearchDialect.create_term(

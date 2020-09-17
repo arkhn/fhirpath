@@ -740,11 +740,19 @@ class GroupTerm(object):
         for term in self.terms:
             term.finalize(context)
 
-        if self.match_operator is None:
-            self.match_operator = MatchType.ANY
-
         if self.type is None:
             self.type = GroupType.COUPLED
+
+        if self.match_operator is None:
+            if all(
+                [
+                    (isinstance(t, Term) and t.unary_operator == OPERATOR.neg)
+                    for t in self.terms
+                ]
+            ):
+                self.match_operator = MatchType.NONE
+            else:
+                self.match_operator = MatchType.ANY
 
         self._finalized = True
 
