@@ -203,8 +203,8 @@ class SearchContext(object):
                 else:
                     val_ = val
 
-                for prefix in search_param_prefixes.keys():
-                    if val_.startswith(prefix) and search_param.support_prefix(prefix):
+                for prefix in search_param_prefixes:
+                    if val_.startswith(prefix) and search_param.support_prefix():
                         comparison_operator = prefix
                         val_ = val_[2:]
                         break
