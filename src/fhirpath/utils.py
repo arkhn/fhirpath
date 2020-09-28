@@ -569,7 +569,7 @@ class BundleWrapper:
             entry["fullUrl"] = "{0}/{1}".format(resource_type, resource_id)
 
             # use the model factory in order to validate the resource
-            entry["resource"] = construct_fhir_element(resource_type, resource).json()
+            entry["resource"] = resource
 
             # search = BundleEntrySearch
             search = {"mode": mode}
