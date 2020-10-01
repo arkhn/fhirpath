@@ -34,7 +34,7 @@ from fhirpath.fql import (
     sort_,
     exact_,
 )
-from fhirpath.engine import EngineResult
+from fhirpath.engine import EngineResult, EngineResultBody, EngineResultHeader
 from fhirpath.fql.types import ElementPath
 from fhirpath.interfaces import IGroupTerm, ISearch, ISearchContext
 from fhirpath.query import Q_, QueryResult
@@ -575,6 +575,10 @@ class Search(object):
             # filter included resources for which we have references to
             included_resources = [r for r in included_resources if ids.get(r)]
 
+            # if no references were extracted from the main_query_result, skip.
+            if not included_resources:
+                continue
+
             # Build a Q_ (query) object to join the resource based on reference ids.
             builder = Q_(included_resources, self.context.engine)
             terms: List = []
@@ -639,6 +643,10 @@ class Search(object):
 
             # Extract IDs from the main query result
             ids = main_query_result.extract_ids()
+
+            # if no IDs were extracted from the main_query_result, skip.
+            if not ids:
+                continue
 
             # Build a Q_ (query) object to join the resource based on reference ids.
             builder = Q_([from_resource_type], self.context.engine)
@@ -1596,20 +1604,22 @@ class Search(object):
 
             return builder.select(*text_elements)
 
-    def response(self, result, includes):
+    def response(self, result, includes, as_json):
         """ """
-        return self.context.engine.wrapped_with_bundle(result, includes)
+        return self.context.engine.wrapped_with_bundle(
+            result, includes=includes, as_json=as_json
+        )
 
-    def __call__(self):
+    def __call__(self, as_json=False):
         """ """
 
         # TODO: chaining
-        # self.chaining_queries = self.chaining()
 
         # reverse chaining (_has)
         if self.result_params.get("_has"):
             has_queries = self.has()
-            # compute the intersection of referenced resources' ID from the result of _has queries.
+            # compute the intersection of referenced resources' ID
+            # from the result of _has queries.
             self.reverse_chaining_results = {}
             for ref_param, q in has_queries:
                 res = q.fetchall()
@@ -1622,10 +1632,14 @@ class Search(object):
                 }
 
             # if the _has predicates did not match any documents, return an empty result
-            # FIXME: we use the result of the last _has query to build the empty bundle, but
-            # we should be more explicit about the query context.
+            # FIXME: we use the result of the last _has query to build the empty bundle,
+            # but we should be more explicit about the query context.
             if not self.reverse_chaining_results:
-                return self.response(res, [])
+                return self.response(
+                    EngineResult(EngineResultHeader(total=0), EngineResultBody()),
+                    [],
+                    as_json,
+                )
 
         # MAIN QUERY
         self.main_query = self.build()
@@ -1643,14 +1657,14 @@ class Search(object):
             q.fetchall() for q in self.include_queries
         ]
 
-        # _revInclude
+        # _revinclude
         self.rev_include_queries = self.rev_include(main_result)
         rev_include_results: List[EngineResult] = [
             q.fetchall() for q in self.rev_include_queries
         ]
 
         all_includes = [*include_results, *rev_include_results]
-        return self.response(main_result, all_includes)
+        return self.response(main_result, all_includes, as_json)
 
 
 class AsyncSearch(Search):
