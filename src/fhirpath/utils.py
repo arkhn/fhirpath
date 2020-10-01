@@ -637,8 +637,12 @@ class BundleWrapper:
 
         return link
 
-    def __call__(self):
+    def __call__(self, as_json=False):
         """ """
+        if as_json:
+            # if as_json is True, return the bundle as python dict
+            # instead of building a pydantic.BaseModel
+            return self.data
         return self.bundle_model.parse_obj(self.data)
 
     def json(self):
