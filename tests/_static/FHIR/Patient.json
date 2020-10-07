@@ -3,23 +3,18 @@
         {
             "text": "Patient Saint",
             "use": "usual",
-            "given": [
-                "Eelector",
-                "Patient"
-            ],
+            "given": ["Eelector", "Patient"],
             "family": "Saint"
         }
     ],
+    "birthDate": "1995-12-25",
     "contact": [
         {
             "gender": "male",
             "name": {
                 "text": "Saint Contact Person",
                 "use": "usual",
-                "given": [
-                    "Contact",
-                    "Person"
-                ],
+                "given": ["Contact", "Person"],
                 "family": "Saint"
             }
         }
@@ -74,5 +69,26 @@
             "value": "19c5245f-89a8-49f8-b244-666b32adb92e"
         }
     ],
-    "id": "19c5245f-89a8-49f8-b244-666b32adb92e"
+    "id": "19c5245f-89a8-49f8-b244-666b32adb92e",
+    "meta": {
+        "lastUpdated": "2020-06-22T09:29:23+00:00",
+        "profile": ["http://hl7.org/fhir/StructureDefinition/Patient"],
+        "tag": [
+            {
+                "code": "testme"
+            }
+        ]
+    },
+    "text": {
+        "status": "generated",
+        "div": "\u003cdiv xmlns\u003d\"http://www.w3.org/1999/xhtml\"\u003e\n      \n      \u003cp\u003ePatient P. van de Heuvel @ Acme Healthcare, Inc. MR \u003d 654321\u003c/p\u003e\n    \n    \u003c/div\u003e"
+    },
+    "link": [
+        {
+            "other": {
+                "reference": "Organization/f001"
+            },
+            "type": "seealso"
+        }
+    ]
 }
