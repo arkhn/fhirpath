@@ -19,7 +19,6 @@ from fhirpath.engine.es.mapping import (
     fhir_types_mapping,
 )
 from fhirpath.enums import EngineQueryType
-from fhirpath.exceptions import ValidationError
 from fhirpath.fhirspec import FhirSpecFactory
 from fhirpath.interfaces import IElasticsearchEngine
 from fhirpath.utils import BundleWrapper
@@ -100,72 +99,72 @@ class ElasticsearchEngine(Engine):
             )
         return source_filters
 
-    def _traverse_for_value(self, source, path_):
-        """Looks path_ is innocent string key, but may content expression, function."""
-        if isinstance(source, dict):
-            # xxx: validate path, not blindly sending None
-            if CONTAINS_INDEX_OR_FUNCTION.search(path_) and CONTAINS_FUNCTION.match(
-                path_
-            ):
-                raise ValidationError(
-                    f"Invalid path {path_} has been supllied!"
-                    "Path cannot contain function if source type is dict"
-                )
-            if CONTAINS_INDEX.match(path_):
-                return navigate_indexed_path(source, path_)
-            if path_ == "*":
-                # TODO check if we can have other keys than resource
-                return source[list(source.keys())[0]]
+    # def _traverse_for_value(self, source, path_):
+    #     """Looks path_ is innocent string key, but may content expression, function."""
+    #     if isinstance(source, dict):
+    #         # xxx: validate path, not blindly sending None
+    #         if CONTAINS_INDEX_OR_FUNCTION.search(path_) and CONTAINS_FUNCTION.match(
+    #             path_
+    #         ):
+    #             raise ValidationError(
+    #                 f"Invalid path {path_} has been supllied!"
+    #                 "Path cannot contain function if source type is dict"
+    #             )
+    #         if CONTAINS_INDEX.match(path_):
+    #             return navigate_indexed_path(source, path_)
+    #         if path_ == "*":
+    #             # TODO check if we can have other keys than resource
+    #             return source[list(source.keys())[0]]
 
-            return source.get(path_, None)
+    #         return source.get(path_, None)
 
-        elif isinstance(source, list):
-            if not CONTAINS_FUNCTION.match(path_):
-                raise ValidationError(
-                    f"Invalid path {path_} has been supllied!"
-                    "Path should contain function if source type is list"
-                )
-            parts = path_.split("(")
-            func_name = parts[0]
-            index = None
-            if len(parts[1]) > 1:
-                index = int(parts[1][:-1])
-            if func_name == "count":
-                return len(source)
-            elif func_name == "first":
-                return source[0]
-            elif func_name == "last":
-                return source[-1]
-            elif func_name == "Skip":
-                new_order = list()
-                for idx, no in enumerate(source):
-                    if idx == index:
-                        continue
-                    new_order.append(no)
-                return new_order
-            elif func_name == "Take":
-                try:
-                    return source[index]
-                except IndexError:
-                    return None
-            else:
-                raise NotImplementedError
-        elif isinstance(source, (bytes, str)):
-            if not CONTAINS_FUNCTION.match(path_):
-                raise ValidationError(
-                    f"Invalid path {path_} has been supplied!"
-                    "Path should contain function if source type is list"
-                )
-            parts = path_.split("(")
-            func_name = parts[0]
-            index = len(parts[1]) > 1 and int(parts[1][:-1]) or None
-            if func_name == "count":
-                return len(source)
-            else:
-                raise NotImplementedError
+    #     elif isinstance(source, list):
+    #         if not CONTAINS_FUNCTION.match(path_):
+    #             raise ValidationError(
+    #                 f"Invalid path {path_} has been supllied!"
+    #                 "Path should contain function if source type is list"
+    #             )
+    #         parts = path_.split("(")
+    #         func_name = parts[0]
+    #         index = None
+    #         if len(parts[1]) > 1:
+    #             index = int(parts[1][:-1])
+    #         if func_name == "count":
+    #             return len(source)
+    #         elif func_name == "first":
+    #             return source[0]
+    #         elif func_name == "last":
+    #             return source[-1]
+    #         elif func_name == "Skip":
+    #             new_order = list()
+    #             for idx, no in enumerate(source):
+    #                 if idx == index:
+    #                     continue
+    #                 new_order.append(no)
+    #             return new_order
+    #         elif func_name == "Take":
+    #             try:
+    #                 return source[index]
+    #             except IndexError:
+    #                 return None
+    #         else:
+    #             raise NotImplementedError
+    #     elif isinstance(source, (bytes, str)):
+    #         if not CONTAINS_FUNCTION.match(path_):
+    #             raise ValidationError(
+    #                 f"Invalid path {path_} has been supplied!"
+    #                 "Path should contain function if source type is list"
+    #             )
+    #         parts = path_.split("(")
+    #         func_name = parts[0]
+    #         index = len(parts[1]) > 1 and int(parts[1][:-1]) or None
+    #         if func_name == "count":
+    #             return len(source)
+    #         else:
+    #             raise NotImplementedError
 
-        else:
-            raise NotImplementedError
+    #     else:
+    #         raise NotImplementedError
 
     def _execute(self, query, unrestricted, query_type):
         """ """
@@ -206,19 +205,36 @@ class ElasticsearchEngine(Engine):
     def calculate_field_index_name(self, resource_type):
         raise NotImplementedError
 
+    # def extract_hits(self, source_filters, hits, container, doc_type="_doc"):
+    #     """ """
+    #     for res in hits:
+    #         if res["_type"] != doc_type:
+    #             continue
+    #         row = EngineResultRow()
+    #         for fullpath in source_filters:
+    #             source = res["_source"]
+    #             for path_ in fullpath.split("."):
+    #                 source = self._traverse_for_value(source, path_)
+    #                 if source is None:
+    #                     break
+    #             row.append(source)
+
+    #         container.add(row)
+
     def extract_hits(self, source_filters, hits, container, doc_type="_doc"):
         """ """
         for res in hits:
             if res["_type"] != doc_type:
                 continue
             row = EngineResultRow()
-            for fullpath in source_filters:
-                source = res["_source"]
-                for path_ in fullpath.split("."):
-                    source = self._traverse_for_value(source, path_)
-                    if source is None:
-                        break
-                row.append(source)
+
+            # the res["_source"] object contains the resource data indexed by field_index_name.
+            # eg: {<field_index_name>: {patient_data...}}
+            # this object should always have a single key:value pair since the term queries
+            # performed by ES are always scoped by resource_type.
+            # In short, row is an array with a single item.
+            for resource_data in res["_source"].values():
+                row.append(resource_data)
 
             container.add(row)
 

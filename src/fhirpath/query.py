@@ -404,15 +404,15 @@ class QueryResult(ABC):
         Returns 0 when the input collection is empty."""
         return self._engine.execute(
             self._query, self._unrestricted, EngineQueryType.COUNT
-        ).header.total
+        )
 
     def empty(self):
         """Returns true if the input collection is empty ({ }) and false otherwise."""
-        return self.count() == 0
+        return self.count().header.total == 0
 
     def __len__(self):
         """ """
-        return self.count()
+        return self.count().header.total
 
     def OFF__getitem__(self, key):
         """

@@ -33,6 +33,7 @@ from yarl import URL
 from zope.interface import implementer
 
 from fhirpath.thirdparty import Proxy
+from fhir.resources.fhirabstractmodel import FHIRAbstractModel
 
 from .enums import FHIR_VERSION
 from .interfaces import IPathInfoContext
@@ -40,7 +41,6 @@ from .storage import FHIR_RESOURCE_CLASS_STORAGE, PATH_INFO_STORAGE
 from .types import PrimitiveDataTypes
 
 if TYPE_CHECKING:
-    from fhir.resources.fhirabstractmodel import FHIRAbstractModel  # noqa: F401
     from fhir.resources.fhirtypes import (  # noqa: F401
         AbstractBaseType,
         AbstractType,
@@ -565,9 +565,13 @@ class BundleWrapper:
             if isinstance(resource, dict):
                 resource_id = resource["id"]
                 resource_type = resource["resourceType"]
-            else:
+            elif isinstance(resource, FHIRAbstractModel):
                 resource_id = resource.id
                 resource_type = resource.resource_type
+            else:
+                raise NotImplementedError(
+                    f"EngineRowResult must be a dict or FHIRAbstractModel, got: {row}"
+                )
             # entry = BundleEntry
             entry = dict()
             entry["fullUrl"] = "{0}/{1}".format(resource_type, resource_id)

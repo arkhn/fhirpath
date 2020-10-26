@@ -30,6 +30,7 @@ from fhirpath.enums import (
 from fhirpath.exceptions import ValidationError
 from fhirpath.fhirspec import (
     FHIRSearchSpecFactory,
+    lookup_fhir_resource_spec,
     ResourceSearchParameterDefinition,
     SearchParameter,
     search_param_prefixes,
@@ -448,9 +449,9 @@ class Search(object):
         if _revinclude:
             self.result_params["_revinclude"] = _revinclude
 
-        _elements = all_params.popone("_elements", [])
-        if len(_elements) > 0:
-            self.result_params["_elements"] = ",".join(_elements)
+        _elements = all_params.popone("_elements", None)
+        if _elements:
+            self.result_params["_elements"] = _elements.split(",")
 
         _contained = all_params.popone("_contained", None)
         if _contained:
@@ -467,6 +468,8 @@ class Search(object):
         builder = Q_(self.context.resource_types, self.context.engine)
 
         builder = self.attach_where_terms(builder)
+        builder = self.attach_select_terms(builder)
+        builder = self.attach_summary_terms(builder)
         builder = self.attach_sort_terms(builder)
         builder = self.attach_limit_terms(builder)
 
@@ -1544,6 +1547,90 @@ class Search(object):
         if len(terms) > 0:
             return builder.sort(*terms)
         return builder
+
+    def attach_select_terms(self, builder):
+        """ """
+        if "_elements" not in self.result_params:
+            return builder
+
+        paths = [
+            f"{r}.{el}"
+            for el in self.result_params["_elements"]
+            for r in self.context.resource_types
+        ]
+        mandatories = [
+            f"{r}.{el}" for el in ["id"] for r in self.context.resource_types
+        ]
+        return builder.select(*paths, *mandatories)
+
+    def attach_summary_terms(self, builder):
+        """ """
+        if "_summary" not in self.result_params:
+            return builder
+
+        if self.result_params["_summary"] in ["count", "false"]:
+            return builder
+
+        specs = [
+            lookup_fhir_resource_spec(r, True, FHIR_VERSION.R4)
+            for r in self.context.resource_types
+        ]
+
+        def get_attr_paths(attribute):
+            if attribute.path.endswith("[x]"):
+                for prop in attribute.as_properties():
+                    return [
+                        f"{prop.path.rsplit('.', 1)[0]}.{prop.name}"
+                        for prop in attribute.as_properties()
+                    ]
+            else:
+                return [attribute.path]
+
+        if self.result_params["_summary"] in ("data", "true"):
+
+            def should_include(attr):
+                if self.result_params["_summary"] == "data":
+                    return (
+                        not attr.path.endswith(".text")
+                        and not attr.is_main_profile_element
+                    )
+                elif self.result_params["_summary"] == "true":
+                    return attr.is_summary
+
+            summary_elements = [
+                f"{r}.{attr}"
+                for r in self.context.resource_types
+                for attr in ["id", "meta"]
+            ]
+
+            # filter all summary attributes
+            summary_attributes = [
+                attr for spec in specs for attr in spec.elements if should_include(attr)
+            ]
+
+            # append summary attributes' paths to summary_elements
+            summary_elements.extend(
+                [path for attr in summary_attributes for path in get_attr_paths(attr)]
+            )
+
+            return builder.select(*summary_elements)
+
+        if self.result_params["_summary"] == "text":
+            text_elements = [
+                el.path
+                for spec in specs
+                for el in spec.elements
+                if el.n_min is not None and el.n_min > 0
+            ]
+            text_elements.extend(
+                [
+                    f"{r}.{attr}"
+                    for r in self.context.resource_types
+                    for attr in ["text", "id", "meta"]
+                ]
+            )
+
+            return builder.select(*text_elements)
 
     def attach_limit_terms(self, builder):
         """ """
