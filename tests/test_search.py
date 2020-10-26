@@ -491,6 +491,7 @@ def test_search_result_as_json(es_data, engine):
     fhir_search = Search(search_context, params=params)
 
     bundle = fhir_search(as_json=True)
+    assert bundle["resourceType"] == "Bundle"
     assert bundle["total"] == 1
     assert isinstance(bundle["entry"][0], dict)
 
@@ -1335,3 +1336,24 @@ def test_searchparam_summary_count(es_data, engine):
     result = Search(search_context, params=(("_summary", "count"),))()
     assert result.entry == []
     assert result.total == 1
+
+
+def test_searchparam_ignored_pretty_format(es_data, engine):
+    search_context = SearchContext(engine, "Encounter")
+    params = (
+        ("date", "ap2015-01-17T16:00:00"),
+        ("_pretty", "true"),
+        ("_format", "application/fhir+json"),
+    )
+    fhir_search = Search(search_context, params=params)
+    bundle = fhir_search()
+    assert bundle.total == 1
+
+    search_context = SearchContext(engine, "Patient")
+    params = (
+        ("_pretty", "true"),
+        ("_format", "application/fhir+json"),
+    )
+    fhir_search = Search(search_context, params=params)
+    bundle = fhir_search()
+    assert bundle.total == 1

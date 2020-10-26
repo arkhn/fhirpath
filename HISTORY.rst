@@ -2,15 +2,30 @@
 History
 =======
 
-0.8.2 (unreleased)
+0.9.2 (unreleased)
+------------------
+
+- Nothing changed yet.
+
+
+0.9.1 (2020-10-24)
+------------------
+
+- Added supports for ``_format`` and ``_pretty`` params, now there should no complain for those, instead of simply ignored. [nazrulworld]
+
+
+0.9.0 (2020-10-24)
 ------------------
 
 - Handle ``:identifier`` modifier for reference search parameters [simonvadee]
+
+- fixes `BundleWrapper`` as_json mode, now includes with ``resourceType`` value. [nazrulworld]
 
 - ``Dict`` response option has bee added in ``fhirpath.search.fhir_search`` [nazrulworld]
 
 - Ignore empty search params #21 [simonvadee]
 
+- Just for performance optimization issue minimum required ``zope.interface`` version is ``5.1.2``.
 
 0.8.1 (2020-10-05)
 ------------------
