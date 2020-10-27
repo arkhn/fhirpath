@@ -48,6 +48,7 @@ from fhirpath.fql import (
     sa_,
     sort_,
 )
+from fhirpath.enums import EngineQueryType
 from fhirpath.fql.types import ElementPath
 from fhirpath.interfaces import IGroupTerm, ISearch, ISearchContext
 from fhirpath.query import Q_, QueryResult
@@ -1652,6 +1653,11 @@ class Search(object):
 
     def __call__(self, as_json=False):
         """ """
+        if "_scroll_id" in self.search_params:
+            # TODO don't do that here but in the Engine directly?
+            raw_result = self.context.engine.connection.scroll(self.search_params["_scroll_id"])
+            result = self.context.engine.process_raw_result(raw_result, [ElementPath("*")], EngineQueryType.DML)
+            return self.response(result, [], as_json)
 
         # TODO: chaining
 

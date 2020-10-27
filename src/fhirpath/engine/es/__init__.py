@@ -252,7 +252,9 @@ class ElasticsearchEngine(Engine):
             source_filters = self._get_source_filters(selects)
 
         result = EngineResult(
-            header=EngineResultHeader(total=total), body=EngineResultBody()
+            header=EngineResultHeader(total=total),
+            body=EngineResultBody(),
+            scroll_id=rawresult["_scroll_id"],
         )
         if len(selects) == 0:
             # Nothing would be in body
@@ -261,24 +263,27 @@ class ElasticsearchEngine(Engine):
         if query_type != EngineQueryType.COUNT:
             self.extract_hits(source_filters, rawresult["hits"]["hits"], result.body)
 
-        if "_scroll_id" in rawresult and result.header.total > len(
-            rawresult["hits"]["hits"]
-        ):
-            # we need to fetch all!
-            consumed = len(rawresult["hits"]["hits"])
+        # TODO add link to next page in Result bundle
 
-            while result.header.total > consumed:
-                # xxx: dont know yet, if from_, size is better solution
-                raw_res = self.connection.scroll(rawresult["_scroll_id"])
-                if len(raw_res["hits"]["hits"]) == 0:
-                    break
+        # TODO this is not what we want!
+        # if "_scroll_id" in rawresult and result.header.total > len(
+        #     rawresult["hits"]["hits"]
+        # ):
+        #     # we need to fetch all!
+        #     consumed = len(rawresult["hits"]["hits"])
 
-                self.extract_hits(source_filters, raw_res["hits"]["hits"], result.body)
+        #     while result.header.total > consumed:
+        #         # xxx: dont know yet, if from_, size is better solution
+        #         raw_res = self.connection.scroll(rawresult["_scroll_id"])
+        #         if len(raw_res["hits"]["hits"]) == 0:
+        #             break
 
-                consumed += len(raw_res["hits"]["hits"])
+        #         self.extract_hits(source_filters, raw_res["hits"]["hits"], result.body)
 
-                if result.header.total <= consumed:
-                    break
+        #         consumed += len(raw_res["hits"]["hits"])
+
+        #         if result.header.total <= consumed:
+        #             break
 
         return result
 

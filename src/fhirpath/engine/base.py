@@ -118,13 +118,12 @@ class EngineResult(object):
     body: EngineResultBody
 
     def __init__(
-        self,
-        header: EngineResultHeader,
-        body: EngineResultBody,
+        self, header: EngineResultHeader, body: EngineResultBody, scroll_id: str
     ):
         """ """
         self.header = header
         self.body = body
+        self._scroll_id = scroll_id
 
     def extract_ids(self) -> Dict[str, List[str]]:
         ids: Dict = defaultdict(list)

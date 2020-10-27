@@ -63,7 +63,7 @@ class ElasticsearchConnection(Connection):
         params["body"] = compiled_query
         return params
 
-    def fetch(self, index, compiled_query):
+    def fetch(self, index, compiled_query, scroll="1m"):
         """xxx: must have use scroll+slice
         https://stackoverflow.com/questions/43211387/
         what-does-elasticsearch-automatic-slicing-do
@@ -72,7 +72,15 @@ class ElasticsearchConnection(Connection):
         """
         search_params = self.finalize_search_params(compiled_query, EngineQueryType.DML)
         conn = self.raw_connection
-        result = conn.search(index=index, **search_params)
+        result = conn.search(index=index, **search_params, scroll=scroll)
+        self._evaluate_result(result)
+        return result
+
+    def scroll(self, scroll_id, scroll="1m"):
+        """ """
+        result = self.raw_connection.scroll(
+            body={"scroll_id": scroll_id}, scroll=scroll
+        )
         self._evaluate_result(result)
         return result
 
@@ -94,14 +102,6 @@ class ElasticsearchConnection(Connection):
             for failure in result["_shards"].get("failures") or []:
                 error_message = failure["reason"]
             raise Invalid(reason=error_message)
-
-    def scroll(self, scroll_id, scroll="30s"):
-        """ """
-        result = self.raw_connection.scroll(
-            body={"scroll_id": scroll_id}, scroll=scroll
-        )
-        self._evaluate_result(result)
-        return result
 
 
 class ElasticsearchConnectionFactory(ConnectionFactory):
