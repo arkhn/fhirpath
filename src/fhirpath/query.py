@@ -51,6 +51,7 @@ class Query(ABC):
         where: WhereClause,
         sort: SortClause,
         limit: LimitClause,
+        scroll_id: str,
     ):
         """ """
 
@@ -60,6 +61,7 @@ class Query(ABC):
         self._where: WhereClause = where
         self._sort: SortClause = sort
         self._limit: LimitClause = limit
+        self._scroll_id: str = scroll_id
 
     @classmethod
     def _builder(cls, engine: Optional["Engine"] = None) -> "QueryBuilder":
@@ -80,6 +82,7 @@ class Query(ABC):
             builder._where,  # type: ignore
             builder._sort,  # type: ignore
             builder._limit,  # type: ignore
+            builder._scroll_id,  # type: ignore
         )
         return query
 
@@ -142,6 +145,7 @@ class QueryBuilder(ABC):
         self._where: WhereClause = WhereClause()
         self._sort: SortClause = SortClause()
         self._limit: LimitClause = LimitClause()
+        self._scroll_id: str = None
 
     def bind(self, engine: "Engine"):
         """ """
@@ -261,6 +265,12 @@ class QueryBuilder(ABC):
                 else:
                     sort_path = sort_(sort_path)
             self._sort.append(sort_path)
+
+    @builder
+    def set_scroll_id(self, scroll_id):
+        """ """
+        self._pre_check()
+        self._scroll_id = scroll_id
 
     def get_query(self) -> "Query":
         """ """

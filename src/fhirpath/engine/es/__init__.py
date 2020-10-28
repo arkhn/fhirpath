@@ -178,7 +178,9 @@ class ElasticsearchEngine(Engine):
             calculate_field_index_name=self.calculate_field_index_name,
             get_mapping=self.get_mapping,
         )
-        if query_type == EngineQueryType.DML:
+        if query._scroll_id:
+            raw_result = self.connection.scroll(query._scroll_id)
+        elif query_type == EngineQueryType.DML:
             raw_result = self.connection.fetch(self.get_index_name(), compiled)
         elif query_type == EngineQueryType.COUNT:
             raw_result = self.connection.count(self.get_index_name(), compiled)
