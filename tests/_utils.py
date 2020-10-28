@@ -65,7 +65,7 @@ class TestElasticsearchEngine(ElasticsearchEngine):
         mapping = fhir_resource_mapping(resource_type)
         return mapping
 
-    def current_url(self):
+    def current_url(self, query_params):
         """ """
         return yarl.URL("http://nohost/@fhir")
 

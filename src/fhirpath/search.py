@@ -15,6 +15,7 @@ from typing import (
     cast,
 )
 from urllib.parse import unquote_plus
+from yarl import URL
 
 from multidict import MultiDict, MultiDictProxy
 from zope.interface import implementer
@@ -97,8 +98,7 @@ class SearchContext(object):
         self.definitions = self.get_parameters_definition(self.engine.fhir_release)
 
     def get_parameters_definition(
-        self,
-        fhir_release: FHIR_VERSION,
+        self, fhir_release: FHIR_VERSION,
     ) -> List[ResourceSearchParameterDefinition]:
         """ """
         fhir_release = FHIR_VERSION.normalize(fhir_release)
@@ -340,6 +340,16 @@ class Search(object):
         additional_resource_types = self.result_params.get("_type")
         if additional_resource_types:
             self.context.augment_with_types(additional_resource_types)
+
+        self.query_string = self.build_query_string_from_params(
+            query_string, all_params
+        )
+
+    def build_query_string_from_params(self, query_string, params):
+        if query_string:
+            return f"_type={','.join(self.context.resource_types)}&{query_string}"
+        else:
+            return URL.build(query={**params, **{"_type": self.context.resource_types}})
 
     @staticmethod
     def validate_params(context, query_string, params):
@@ -1648,15 +1658,19 @@ class Search(object):
     def response(self, result, includes, as_json):
         """ """
         return self.context.engine.wrapped_with_bundle(
-            result, includes=includes, as_json=as_json
+            result, query_params=self.query_string, includes=includes, as_json=as_json
         )
 
     def __call__(self, as_json=False):
         """ """
         if "_scroll_id" in self.search_params:
             # TODO don't do that here but in the Engine directly?
-            raw_result = self.context.engine.connection.scroll(self.search_params["_scroll_id"])
-            result = self.context.engine.process_raw_result(raw_result, [ElementPath("*")], EngineQueryType.DML)
+            raw_result = self.context.engine.connection.scroll(
+                self.search_params["_scroll_id"]
+            )
+            result = self.context.engine.process_raw_result(
+                raw_result, [ElementPath("*")], EngineQueryType.DML
+            )
             return self.response(result, [], as_json)
 
         # TODO: chaining

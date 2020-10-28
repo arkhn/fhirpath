@@ -584,53 +584,15 @@ class BundleWrapper:
 
     def attach_links(self, url, entries_count):
         """ """
-        container = list()
-
-        # _max_count = int(url.query.get("_count", 1))
-        # _total_results = self.data["total"]
-        # _current_offset = int(url.query.get("search-offset", 0))
-        url_params = {}
-
-        container.append(self.make_link("self", url))
+        links = [self.make_link("self", url)]
 
         # let's pagitionation here
         # With scrolling, we can only access the next page
         if self._scroll_id:
-            url_params["_scroll_id"] = self._scroll_id
-            container.append(self.make_link("next", url, url_params))
+            url_params = {"_scroll_id": self._scroll_id}
+            links.append(self.make_link("next", url, url_params))
 
-        # if _total_results > _max_count:
-        #     # Yes pagination is required!
-        #     url_params["_count"] = _max_count
-        #     url_params["search-id"] = self.data["id"]
-
-        #     # first page
-        #     if _current_offset != 0:
-        #         url_params["search-offset"] = 0
-        #         container.append(self.make_link("first", url, url_params))
-        #     # Previous Page
-        #     if _current_offset > 0:
-        #         url_params["search-offset"] = int(_current_offset - _max_count)
-        #         container.append(self.make_link("previous", url, url_params))
-
-        #     # Next Page
-        #     if _current_offset < int(
-        #         math.floor(_total_results / _max_count) * _max_count
-        #     ):
-        #         url_params["search-offset"] = int(_current_offset + _max_count)
-        #         container.append(self.make_link("next", url, url_params))
-
-        #     # last page
-        #     last_offset = int(math.floor(_total_results / _max_count) * _max_count)
-        #     if (_total_results % last_offset) == 0:
-        #         last_offset -= _max_count
-
-        #     if _current_offset < last_offset and last_offset > 0:
-
-        #         url_params["search-offset"] = last_offset
-        #         container.append(self.make_link("last", url, url_params))
-
-        self.data["link"] = container
+        self.data["link"] = links
 
     def make_link(self, relation, url, params=None):
         """ """
