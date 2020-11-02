@@ -586,7 +586,6 @@ class BundleWrapper:
         """ """
         links = [self.make_link("self", url)]
 
-        # let's pagitionation here
         # With scrolling, we can only access the next page
         if self._scroll_id:
             url_params = {"_scroll_id": self._scroll_id}

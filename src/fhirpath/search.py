@@ -328,6 +328,8 @@ class Search(object):
         elif isinstance(params, MultiDictProxy):
             all_params = params.copy()
 
+        self.query_params = self.build_query_params_string(all_params)
+
         self.result_params: Dict[str, str] = dict()
         self.search_params = None
 
@@ -341,20 +343,10 @@ class Search(object):
         if additional_resource_types:
             self.context.augment_with_types(additional_resource_types)
 
-        self.query_string = self.build_query_string_from_params(
-            query_string, all_params
-        )
-
-    def build_query_string_from_params(self, query_string, params):
-        if query_string:
-            if re.search(url_type, query_string):
-                # Remove _type if it exists
-                query_string = re.sub(url_type, r"\1\2", query_string)
-            return f"{query_string}&_type={','.join(self.context.resource_types)}"
-        else:
-            return URL.build(
-                query={**params, **{"_type": self.context.resource_types}}
-            ).query_string
+    def build_query_params_string(self, params):
+        return URL.build(
+            query={**params, **{"_type": self.context.resource_types}}
+        ).query_string
 
     @staticmethod
     def validate_params(context, query_string, params):
@@ -1667,12 +1659,14 @@ class Search(object):
 
     def attach_scroll_id(self, builder):
         """ """
-        return builder.set_scroll_id(self.result_params.get("_scroll_id"))
+        if "_scroll_id" in self.result_params:
+            return builder.set_scroll_id(self.result_params.get("_scroll_id"))
+        return builder
 
     def response(self, result, includes, as_json):
         """ """
         return self.context.engine.wrapped_with_bundle(
-            result, query_params=self.query_string, includes=includes, as_json=as_json
+            result, query_params=self.query_params, includes=includes, as_json=as_json
         )
 
     def __call__(self, as_json=False):

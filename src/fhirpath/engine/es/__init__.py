@@ -256,7 +256,7 @@ class ElasticsearchEngine(Engine):
         result = EngineResult(
             header=EngineResultHeader(total=total),
             body=EngineResultBody(),
-            scroll_id=rawresult["_scroll_id"],
+            scroll_id=rawresult.get("_scroll_id"),
         )
         if len(selects) == 0:
             # Nothing would be in body
