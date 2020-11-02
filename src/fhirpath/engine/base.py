@@ -17,8 +17,6 @@ from fhirpath.interfaces.engine import (
     IEngineResultHeader,
     IEngineResultRow,
 )
-from fhirpath.query import Query
-from fhirpath.thirdparty import Proxy
 
 __author__ = "Md Nazrul Islam <email2nazrul@gmail.com>"
 
@@ -43,10 +41,6 @@ class Engine(ABC):
 
         self.create_dialect(dialect_factory)
 
-    def create_query(self):
-        """ """
-        return Query.with_engine(self.__proxy__())
-
     def create_connection(self, factory):
         """ """
         self.connection = factory(self)
@@ -59,20 +53,9 @@ class Engine(ABC):
         """Hook: before execution of query"""
         pass
 
-    def __proxy__(self):
-        """ """
-        return EngineProxy(self)
-
-
-class EngineProxy(Proxy):
-    """ """
-
-    def __init__(self, engine):
-        """ """
-        obj = IEngine(engine)
-        super(EngineProxy, self).__init__()
-        # xxx: more?
-        self.initialize(obj)
+    @classmethod
+    def is_async(cls):
+        return False
 
 
 @implementer(IEngineResultHeader)
@@ -82,7 +65,7 @@ class EngineResultHeader(object):
     total = None
     raw_query = None
     generated_on = None
-    selects = None
+    elements = None
 
     def __init__(self, total, raw_query=None):
         """ """

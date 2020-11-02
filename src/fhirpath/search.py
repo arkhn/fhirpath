@@ -15,6 +15,7 @@ from typing import (
     cast,
 )
 from urllib.parse import unquote_plus
+from warnings import warn
 
 from multidict import MultiDict, MultiDictProxy
 from zope.interface import implementer
@@ -33,6 +34,7 @@ from fhirpath.fhirspec import (
     lookup_fhir_resource_spec,
     ResourceSearchParameterDefinition,
     SearchParameter,
+    lookup_fhir_resource_spec,
     search_param_prefixes,
 )
 from fhirpath.fql import (
@@ -86,18 +88,23 @@ class SearchContext(object):
 
     definitions: List[ResourceSearchParameterDefinition]
 
-    def __init__(self, engine, resource_type, unrestricted=False, async_result=False):
+    def __init__(self, engine, resource_type, unrestricted=False, async_result=None):
         """ """
         self.engine = engine
         self.resource_types = [resource_type] if resource_type else []
         self.unrestricted = unrestricted
-        self.async_result = async_result
+        self.async_result = self.engine.__class__.is_async()
+        if async_result is not None:
+            warn(
+                "'async_result' is no longer used, as Engine has that info already. "
+                "this parameter will be removed in future release.",
+                category=DeprecationWarning,
+            )
 
         self.definitions = self.get_parameters_definition(self.engine.fhir_release)
 
     def get_parameters_definition(
-        self,
-        fhir_release: FHIR_VERSION,
+        self, fhir_release: FHIR_VERSION,
     ) -> List[ResourceSearchParameterDefinition]:
         """ """
         fhir_release = FHIR_VERSION.normalize(fhir_release)
@@ -471,6 +478,7 @@ class Search(object):
         builder = self.attach_select_terms(builder)
         builder = self.attach_summary_terms(builder)
         builder = self.attach_sort_terms(builder)
+        builder = self.attach_summary_terms(builder)
         builder = self.attach_limit_terms(builder)
 
         # handle _has predicates
@@ -484,10 +492,7 @@ class Search(object):
 
             builder = builder.where(*terms)
 
-        result: QueryResult = builder(
-            unrestricted=self.context.unrestricted,
-            async_result=self.context.async_result,
-        )
+        result: QueryResult = builder(unrestricted=self.context.unrestricted)
 
         return result
 
@@ -552,10 +557,7 @@ class Search(object):
             builder = builder.where(*terms_container)
             self.attach_limit_terms(builder)
 
-            result: QueryResult = builder(
-                unrestricted=self.context.unrestricted,
-                async_result=self.context.async_result,
-            )
+            result: QueryResult = builder(unrestricted=self.context.unrestricted)
             has_queries.append((ref_param, result))
 
         return has_queries
@@ -632,10 +634,7 @@ class Search(object):
             # FIXME: find a better way to handle the limit
             builder = builder.limit(DEFAULT_RESULT_COUNT)
 
-            result: QueryResult = builder(
-                unrestricted=self.context.unrestricted,
-                async_result=self.context.async_result,
-            )
+            result: QueryResult = builder(unrestricted=self.context.unrestricted)
             include_queries.append(result)
 
         return include_queries
@@ -702,10 +701,7 @@ class Search(object):
             builder = builder.where(*terms)
             self.attach_limit_terms(builder)
 
-            result: QueryResult = builder(
-                unrestricted=self.context.unrestricted,
-                async_result=self.context.async_result,
-            )
+            result: QueryResult = builder(unrestricted=self.context.unrestricted)
             include_queries.append(result)
 
         return include_queries
@@ -1561,7 +1557,7 @@ class Search(object):
         mandatories = [
             f"{r}.{el}" for el in ["id"] for r in self.context.resource_types
         ]
-        return builder.select(*paths, *mandatories)
+        return builder.element(*paths, *mandatories)
 
     def attach_summary_terms(self, builder):
         """ """
@@ -1613,7 +1609,7 @@ class Search(object):
                 [path for attr in summary_attributes for path in get_attr_paths(attr)]
             )
 
-            return builder.select(*summary_elements)
+            return builder.element(*summary_elements)
 
         if self.result_params["_summary"] == "text":
             text_elements = [
@@ -1630,7 +1626,7 @@ class Search(object):
                 ]
             )
 
-            return builder.select(*text_elements)
+            return builder.element(*text_elements)
 
     def attach_limit_terms(self, builder):
         """ """
@@ -1686,7 +1682,7 @@ class Search(object):
 
         # TODO handle count with _includes
         if self.result_params.get("_summary") == "count":
-            main_result = self.main_query.count()
+            main_result = self.main_query.count_raw()
         else:
             main_result = self.main_query.fetchall()
         assert main_result is not None
@@ -1741,7 +1737,7 @@ class AsyncSearch(Search):
 
         # TODO handle count with _includes
         if self.result_params.get("_summary") == "count":
-            main_result = await self.main_query.count()
+            main_result = await self.main_query.count_raw()
         else:
             main_result = await self.main_query.fetchall()
         assert main_result is not None
@@ -1771,7 +1767,7 @@ def fhir_search(
     """ """
     if TYPE_CHECKING:
         klass: Union[Type[AsyncSearch], Type[Search]]
-    if context.async_result:
+    if context.engine.__class__.is_async():
         klass = AsyncSearch
     else:
         klass = Search
