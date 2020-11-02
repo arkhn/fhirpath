@@ -1557,7 +1557,7 @@ class Search(object):
         mandatories = [
             f"{r}.{el}" for el in ["id"] for r in self.context.resource_types
         ]
-        return builder.select(*paths, *mandatories)
+        return builder.element(*paths, *mandatories)
 
     def attach_summary_terms(self, builder):
         """ """
@@ -1609,7 +1609,7 @@ class Search(object):
                 [path for attr in summary_attributes for path in get_attr_paths(attr)]
             )
 
-            return builder.select(*summary_elements)
+            return builder.element(*summary_elements)
 
         if self.result_params["_summary"] == "text":
             text_elements = [
@@ -1626,7 +1626,7 @@ class Search(object):
                 ]
             )
 
-            return builder.select(*text_elements)
+            return builder.element(*text_elements)
 
     def attach_limit_terms(self, builder):
         """ """
