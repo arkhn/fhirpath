@@ -42,6 +42,7 @@
             "value": "demo1@example.com"
         }
     ],
+    "birthDate": "1995-12-25", 
     "gender": "male",
     "resourceType": "Patient",
     "active": true,

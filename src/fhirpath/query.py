@@ -1,7 +1,8 @@
 # _*_ coding: utf-8 _*_
+import typing
 from abc import ABC
 from copy import copy
-from typing import TYPE_CHECKING, List, Optional, Union
+from warnings import warn
 
 from zope.interface import implementer
 
@@ -15,6 +16,7 @@ from .constraints import required_finalized, required_not_finalized
 from .exceptions import MultipleResultsFound
 from .fql.expressions import and_, fql, sort_
 from .fql.types import (
+    ElementClause,
     ElementPath,
     FromClause,
     LimitClause,
@@ -33,7 +35,7 @@ from .interfaces import (
     ITerm,
 )
 
-if TYPE_CHECKING:
+if typing.TYPE_CHECKING:
     from fhirpath.engine.base import Engine
 
 __author__ = "Md Nazrul Islam<email2nazrul@gmail.com>"
@@ -48,6 +50,7 @@ class Query(ABC):
         fhir_release: FHIR_VERSION,
         from_: FromClause,
         select: SelectClause,
+        element: ElementClause,
         where: WhereClause,
         sort: SortClause,
         limit: LimitClause,
@@ -57,12 +60,13 @@ class Query(ABC):
         self.fhir_release: FHIR_VERSION = FHIR_VERSION.normalize(fhir_release)
         self._from: FromClause = from_
         self._select: SelectClause = select
+        self._element: ElementClause = element
         self._where: WhereClause = where
         self._sort: SortClause = sort
         self._limit: LimitClause = limit
 
     @classmethod
-    def _builder(cls, engine: Optional["Engine"] = None) -> "QueryBuilder":
+    def _builder(cls, engine: typing.Optional["Engine"] = None) -> "QueryBuilder":
         return QueryBuilder(engine)
 
     @classmethod
@@ -77,6 +81,7 @@ class Query(ABC):
             builder._engine.fhir_release,  # type: ignore
             builder._from,  # type: ignore
             builder._select,  # type: ignore
+            builder._element,  # type: ignore
             builder._where,  # type: ignore
             builder._sort,  # type: ignore
             builder._limit,  # type: ignore
@@ -94,6 +99,10 @@ class Query(ABC):
     def get_select(self) -> SelectClause:
         """ """
         return self._select
+
+    def get_element(self) -> ElementClause:
+        """ """
+        return self._element
 
     def get_sort(self) -> SortClause:
         """ """
@@ -132,13 +141,14 @@ class Query(ABC):
 class QueryBuilder(ABC):
     """ """
 
-    def __init__(self, engine: Optional["Engine"] = None):
+    def __init__(self, engine: typing.Optional["Engine"] = None):
         """ """
-        self._engine: Optional["Engine"] = engine
+        self._engine: typing.Optional["Engine"] = engine
         self._finalized: bool = False
 
         self._from: FromClause = FromClause()
         self._select: SelectClause = SelectClause()
+        self._element: ElementClause = ElementClause()
         self._where: WhereClause = WhereClause()
         self._sort: SortClause = SortClause()
         self._limit: LimitClause = LimitClause()
@@ -152,7 +162,7 @@ class QueryBuilder(ABC):
         """ """
         return self.__copy__()
 
-    def finalize(self, engine: Optional["Engine"] = None):
+    def finalize(self, engine: typing.Optional["Engine"] = None):
         """ """
         self._pre_check()
 
@@ -164,9 +174,9 @@ class QueryBuilder(ABC):
                 f"Object from '{self.__class__.__name__}' must be bound with engine"
             )
         # xxx: do any validation?
-        if len(self._select) == 0:
+        if len(self._element) == 0:
             el_path = ElementPath("*")
-            self._select.append(el_path)
+            self._element.append(el_path)
 
         # Finalize path elements
         [se.finalize(self._engine) for se in self._select]
@@ -192,13 +202,14 @@ class QueryBuilder(ABC):
         newone._limit = copy(self._limit)
         newone._from = copy(self._from)
         newone._select = copy(self._select)
+        newone._element = copy(self._element)
         newone._where = copy(self._where)
         newone._sort = copy(self._sort)
 
         return newone
 
     @builder
-    def from_(self, resource_type: Union[str, List[str]]):
+    def from_(self, resource_type: typing.Union[str, typing.List[str]]):
         """ """
         required_not_finalized(self)
 
@@ -223,6 +234,19 @@ class QueryBuilder(ABC):
             if not (el_path.star or el_path.non_fhir):
                 self._validate_root_path(str(el_path))
             self._select.append(el_path)
+
+    @builder
+    def element(self, *args):
+        """ """
+        self._pre_check()
+
+        for el_path in args:
+            if not IElementPath.providedBy(el_path):
+                el_path = ElementPath(el_path)
+            # Make sure correct root path
+            if not (el_path.star or el_path.non_fhir):
+                self._validate_root_path(str(el_path))
+            self._element.append(el_path)
 
     @builder
     def where(self, *args, **kwargs):
@@ -283,19 +307,32 @@ class QueryBuilder(ABC):
     def __call__(
         self,
         unrestricted: bool = False,
-        engine: Optional["Engine"] = None,
-        async_result: bool = False,
-    ) -> Union["QueryResult", "AsyncQueryResult"]:
+        engine: typing.Optional["Engine"] = None,
+        async_result: bool = None,
+    ) -> typing.Union["QueryResult", "AsyncQueryResult"]:
         """ """
+        if async_result is not None:
+            warn(
+                "'async_result' is no longer used, as Engine has that info already. "
+                "this parameter will be removed in future release.",
+                category=DeprecationWarning,
+            )
         if not self._finalized and (engine or self._engine):
             self.finalize(engine)
 
         query = self.get_query()
-        result_factory = QueryResult
-        if async_result is True:
-            result_factory = AsyncQueryResult
-        if TYPE_CHECKING:
+        if typing.TYPE_CHECKING:
             assert self._engine
+
+        if typing.TYPE_CHECKING:
+            result_factory: typing.Union[
+                typing.Type[AsyncQueryResult], typing.Type[QueryResult]
+            ]
+        if self._engine.__class__.is_async() is True:
+            result_factory = AsyncQueryResult
+        else:
+            result_factory = QueryResult
+
         result = result_factory(
             query=query, engine=self._engine, unrestricted=unrestricted
         )
@@ -398,20 +435,22 @@ class QueryResult(ABC):
         or less if there are less than num items. If num is less than or equal to 0, or
         if the input collection is empty ({ }), take returns an empty collection."""
 
-    def count(self):
-        """Returns a collection with a single value which is the integer count of
-        the number of items in the input collection.
-        Returns 0 when the input collection is empty."""
+    def count_raw(self):
+        """Returns EngineResult"""
         return self._engine.execute(
             self._query, self._unrestricted, EngineQueryType.COUNT
         )
+
+    def count(self):
+        """Returns EngineResult"""
+        return self.count_raw()
 
     def empty(self):
         """Returns true if the input collection is empty ({ }) and false otherwise."""
         return self.count().header.total == 0
 
     def __len__(self):
-        """ """
+        """ Returns the number of resources matching the query"""
         return self.count().header.total
 
     def OFF__getitem__(self, key):
@@ -471,7 +510,7 @@ class QueryResult(ABC):
         result = self._engine.execute(self._query, self._unrestricted)
         model_class = self._query.get_from()[0][1]
         for row in result.body:
-            if self._query.get_select()[0].star:
+            if self._query.get_element()[0].star:
                 yield model_class(**row[0])
             else:
                 yield row
@@ -490,7 +529,7 @@ class AsyncQueryResult(QueryResult):
         result = await self._engine.execute(self._query, self._unrestricted)
         model_class = self._query.get_from()[0][1]
         for row in result.body:
-            if self._query.get_select()[0].star:
+            if self._query.get_element()[0].star:
                 yield model_class(**row[0])
             else:
                 yield row
@@ -514,21 +553,24 @@ class AsyncQueryResult(QueryResult):
         return None
 
     async def count(self):
-        """ """
-        return await self._engine.execute(
-            self._query, self._unrestricted, EngineQueryType.COUNT
-        ).header.total
+        """
+        :return: EngineResult
+        """
+        return await self.count_raw()
 
     async def empty(self):
         """Returns true if the input collection is empty ({ }) and false otherwise."""
-        return await self.count() == 0
+        total = await self.count()
+        return total.header.total == 0
 
     def __len__(self):
         """ """
-        return self.count()
+        return self.count().header.total
 
 
-def Q_(resource: Optional[Union[str, List[str]]] = None, engine=None):
+def Q_(
+    resource: typing.Optional[typing.Union[str, typing.List[str]]] = None, engine=None
+):
     """ """
     builder = Query._builder(engine)
     if resource:
