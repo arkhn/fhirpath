@@ -45,9 +45,32 @@ def navigate_indexed_path(source, path_):
         return None
 
 
-@implementer(IElasticsearchEngine)
-class ElasticsearchEngine(Engine):
-    """Elasticsearch Engine"""
+class ElasticsearchEngineBase(Engine):
+    def extract_hits(self, source_filters, hits, container, doc_type="_doc"):
+        """ """
+        for res in hits:
+            if res["_type"] != doc_type:
+                continue
+            row = EngineResultRow()
+            if len(source_filters) > 0:
+                for fullpath in source_filters:
+                    source = res["_source"]
+                    for path_ in fullpath.split("."):
+                        source = self._traverse_for_value(source, path_)
+                        if source is None:
+                            break
+                    row.append(source)
+            else:
+                for resource_data in res["_source"].values():
+                    row.append(resource_data)
+            container.add(row)
+
+    def build_security_query(self, query):
+        """ """
+        return query
+
+    def calculate_field_index_name(self, resource_type):
+        raise NotImplementedError
 
     def get_index_name(self, resource_type: Optional[str] = None):
         """ """
@@ -57,47 +80,77 @@ class ElasticsearchEngine(Engine):
         """ """
         raise NotImplementedError
 
-    def _add_result_headers(self, query, result, compiled):
+    def current_url(self):
+        """
+        complete url from current request
+        return yarl.URL"""
+        raise NotImplementedError
+
+    def wrapped_with_bundle(self, result, includes=None, as_json=False):
         """ """
-        # Process additional meta
-        result.header.raw_query = self.connection.finalize_search_params(compiled)
+        url = self.current_url()
+        if includes is None:
+            includes = list()
+        wrapper = BundleWrapper(self, result, includes, url, "searchset")
+        return wrapper(as_json=as_json)
 
-        source_filters = self._get_source_filters(query.get_select())
-        if len(source_filters) == 0:
-            return
+    def generate_mappings(
+        self,
+        reference_analyzer: str = None,
+        token_normalizer: str = None,
+    ):
+        """
+        You may use this function to build the ES mapping.
+        Returns an object like:
+        {
+            "Patient": {
+                "properties": {
+                    "identifier": {
+                        "properties": {
+                            "use": {
+                                "type": "keyword",
+                                "index": true,
+                                "store": false,
+                                "fields": {
+                                    "raw": {
+                                        "type": "keyword"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        """
+        fhir_spec = FhirSpecFactory.from_release(self.fhir_release.name)
 
-        selects = list()
-        for froms in query.get_from():
-            resource_type = froms[0]
-            field_index_name = self.calculate_field_index_name(resource_type)
-            for path_ in source_filters:
-                if not path_.startswith(field_index_name):
-                    selects.append(path_)
-                    continue
-                parts = path_.split(".")
-                if len(parts) == 1:
-                    selects.append(resource_type)
-                else:
-                    selects.append(".".join([resource_type] + parts[1:]))
+        resources_elements: Dict[
+            str, List[FHIRStructureDefinitionElement]
+        ] = defaultdict()
 
-        result.header.selects = selects
-
-    def _get_source_filters(self, selects):
-        """ """
-        source_filters = []
-        for el_path in selects:
-            if el_path.star:
-                source_filters.append("*")
-                break
-            if el_path.non_fhir is True:
-                # No replacer for Non Fhir Path
-                source_filters.append(el_path.path)
+        for definition_klass in fhir_spec.profiles.values():
+            if definition_klass.name in ("Resource", "DomainResource"):
+                # exceptional
+                resources_elements[definition_klass.name] = definition_klass.elements
                 continue
-            parts = el_path._raw.split(".")
-            source_filters.append(
-                ".".join([self.calculate_field_index_name(parts[0]), *parts[1:]])
-            )
-        return source_filters
+            if definition_klass.structure.subclass_of != "DomainResource":
+                # we accept domain resource only
+                continue
+
+            resources_elements[definition_klass.name] = definition_klass.elements
+
+        elements_paths = build_elements_paths(resources_elements)
+
+        fhir_es_mappings = fhir_types_mapping(
+            self.fhir_release.name, reference_analyzer, token_normalizer
+        )
+        return {
+            resource: {
+                "properties": create_resource_mapping(paths_def, fhir_es_mappings)
+            }
+            for resource, paths_def in elements_paths.items()
+        }
 
     # def _traverse_for_value(self, source, path_):
     #     """Looks path_ is innocent string key, but may content expression, function."""
@@ -166,6 +219,53 @@ class ElasticsearchEngine(Engine):
     #     else:
     #         raise NotImplementedError
 
+    def _get_source_filters(self, selects):
+        """ """
+        source_filters = []
+        for el_path in selects:
+            if el_path.star:
+                source_filters.append("*")
+                break
+            if el_path.non_fhir is True:
+                # No replacer for Non Fhir Path
+                source_filters.append(el_path.path)
+                continue
+            parts = el_path._raw.split(".")
+            source_filters.append(
+                ".".join([self.calculate_field_index_name(parts[0]), *parts[1:]])
+            )
+        return source_filters
+
+    def _add_result_headers(self, query, result, compiled):
+        """ """
+        # Process additional meta
+        result.header.raw_query = self.connection.finalize_search_params(compiled)
+
+        source_filters = self._get_source_filters(query.get_select())
+        if len(source_filters) == 0:
+            return
+
+        selects = list()
+        for froms in query.get_from():
+            resource_type = froms[0]
+            field_index_name = self.calculate_field_index_name(resource_type)
+            for path_ in source_filters:
+                if not path_.startswith(field_index_name):
+                    selects.append(path_)
+                    continue
+                parts = path_.split(".")
+                if len(parts) == 1:
+                    selects.append(resource_type)
+                else:
+                    selects.append(".".join([resource_type] + parts[1:]))
+
+        result.header.selects = selects
+
+
+@implementer(IElasticsearchEngine)
+class ElasticsearchEngine(ElasticsearchEngineBase):
+    """Elasticsearch Engine"""
+
     def _execute(self, query, unrestricted, query_type):
         """ """
         query_copy = query.clone()
@@ -200,52 +300,12 @@ class ElasticsearchEngine(Engine):
         self._add_result_headers(query, result, compiled)
         return result
 
-    def build_security_query(self, query):
-        """ """
-        pass
-
-    def calculate_field_index_name(self, resource_type):
-        raise NotImplementedError
-
-    # def extract_hits(self, source_filters, hits, container, doc_type="_doc"):
-    #     """ """
-    #     for res in hits:
-    #         if res["_type"] != doc_type:
-    #             continue
-    #         row = EngineResultRow()
-    #         for fullpath in source_filters:
-    #             source = res["_source"]
-    #             for path_ in fullpath.split("."):
-    #                 source = self._traverse_for_value(source, path_)
-    #                 if source is None:
-    #                     break
-    #             row.append(source)
-
-    #         container.add(row)
-
-    def extract_hits(self, source_filters, hits, container, doc_type="_doc"):
-        """ """
-        for res in hits:
-            if res["_type"] != doc_type:
-                continue
-            row = EngineResultRow()
-
-            # the res["_source"] object contains the resource data indexed by field_index_name.
-            # eg: {<field_index_name>: {patient_data...}}
-            # this object should always have a single key:value pair since the term queries
-            # performed by ES are always scoped by resource_type.
-            # In short, row is an array with a single item.
-            for resource_data in res["_source"].values():
-                row.append(resource_data)
-
-            container.add(row)
-
     def process_raw_result(self, rawresult, selects, query_type):
         """ """
         if query_type == EngineQueryType.COUNT:
             total = rawresult["count"]
             source_filters = []
-        # let´s make some compabilities
+        # let´s make some compatibilities
         elif isinstance(rawresult["hits"]["total"], dict):
             total = rawresult["hits"]["total"]["value"]
             source_filters = self._get_source_filters(selects)
@@ -258,9 +318,7 @@ class ElasticsearchEngine(Engine):
             body=EngineResultBody(),
             scroll_id=rawresult.get("_scroll_id"),
         )
-        if len(selects) == 0:
-            # Nothing would be in body
-            return result
+
         # extract primary data
         if query_type != EngineQueryType.COUNT:
             self.extract_hits(source_filters, rawresult["hits"]["hits"], result.body)
@@ -281,60 +339,84 @@ class ElasticsearchEngine(Engine):
         wrapper = BundleWrapper(self, result, includes, url, "searchset")
         return wrapper(as_json=as_json)
 
-    def generate_mappings(
-        self,
-        reference_analyzer: str = None,
-        token_normalizer: str = None,
-    ):
-        """
-        You may use this function to build the ES mapping.
-        Returns an object like:
-        {
-            "Patient": {
-                "properties": {
-                    "identifier": {
-                        "properties": {
-                            "use": {
-                                "type": "keyword",
-                                "index": true,
-                                "store": false,
-                                "fields": {
-                                    "raw": {
-                                        "type": "keyword"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        """
-        fhir_spec = FhirSpecFactory.from_release(self.fhir_release.name)
+@implementer(IElasticsearchEngine)
+class AsyncElasticsearchEngine(ElasticsearchEngineBase):
+    """Async Elasticsearch Engine"""
 
-        resources_elements: Dict[
-            str, List[FHIRStructureDefinitionElement]
-        ] = defaultdict()
+    @classmethod
+    def is_async(cls):
+        return True
 
-        for definition_klass in fhir_spec.profiles.values():
-            if definition_klass.name in ("Resource", "DomainResource"):
-                # exceptional
-                resources_elements[definition_klass.name] = definition_klass.elements
-                continue
-            if definition_klass.structure.subclass_of != "DomainResource":
-                # we accept domain resource only
-                continue
+    async def _execute(self, query, unrestricted, query_type):
+        """ """
+        query_copy = query.clone()
 
-            resources_elements[definition_klass.name] = definition_klass.elements
+        if unrestricted is False:
+            self.build_security_query(query_copy)
 
-        elements_paths = build_elements_paths(resources_elements)
-
-        fhir_es_mappings = fhir_types_mapping(
-            self.fhir_release.name, reference_analyzer, token_normalizer
+        compiled = self.dialect.compile(
+            query_copy,
+            calculate_field_index_name=self.calculate_field_index_name,
+            get_mapping=self.get_mapping,
         )
-        return {
-            resource: {
-                "properties": create_resource_mapping(paths_def, fhir_es_mappings)
-            }
-            for resource, paths_def in elements_paths.items()
-        }
+        if query_type == EngineQueryType.DML:
+            raw_result = await self.connection.fetch(self.get_index_name(), compiled)
+        elif query_type == EngineQueryType.COUNT:
+            raw_result = await self.connection.count(self.get_index_name(), compiled)
+        else:
+            raise NotImplementedError
+
+        return raw_result, compiled
+
+    async def execute(self, query, unrestricted=False, query_type=EngineQueryType.DML):
+        """ """
+        raw_result, compiled = await self._execute(query, unrestricted, query_type)
+        selects = query.get_select()
+        # xxx: process result
+        result = await self.process_raw_result(raw_result, selects, query_type)
+
+        # Process additional meta
+        self._add_result_headers(query, result, compiled)
+        return result
+
+    async def process_raw_result(self, rawresult, selects, query_type):
+        """ """
+        if query_type == EngineQueryType.COUNT:
+            total = rawresult["count"]
+            source_filters = []
+        # let´s make some compatibilities
+        elif isinstance(rawresult["hits"]["total"], dict):
+            total = rawresult["hits"]["total"]["value"]
+            source_filters = self._get_source_filters(selects)
+        else:
+            total = rawresult["hits"]["total"]
+            source_filters = self._get_source_filters(selects)
+
+        result = EngineResult(
+            header=EngineResultHeader(total=total), body=EngineResultBody()
+        )
+
+        # extract primary data
+        if query_type != EngineQueryType.COUNT:
+            self.extract_hits(source_filters, rawresult["hits"]["hits"], result.body)
+
+        if "_scroll_id" in rawresult and result.header.total > len(
+            rawresult["hits"]["hits"]
+        ):
+            # we need to fetch all!
+            consumed = len(rawresult["hits"]["hits"])
+
+            while result.header.total > consumed:
+                # xxx: dont know yet, if from_, size is better solution
+                raw_res = await self.connection.scroll(rawresult["_scroll_id"])
+                if len(raw_res["hits"]["hits"]) == 0:
+                    break
+
+                self.extract_hits(source_filters, raw_res["hits"]["hits"], result.body)
+
+                consumed += len(raw_res["hits"]["hits"])
+
+                if result.header.total <= consumed:
+                    break
+
+        return result
