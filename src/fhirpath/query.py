@@ -361,6 +361,10 @@ class QueryResult(ABC):
         """ """
         return self._engine.execute(self._query, self._unrestricted)
 
+    def scroll(self):
+        """ """
+        return self._engine.execute(self._query, self._unrestricted, EngineQueryType.SCROLL)
+
     def single(self):
         """Will return the single item in the input if there is just one item.
         If the input collection is empty ({ }), the result is empty.

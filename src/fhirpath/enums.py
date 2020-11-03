@@ -75,6 +75,7 @@ class EngineQueryType(enum.Enum):
     DDL: str = "DDL"
     DML: str = "DML"
     COUNT: str = "COUNT"
+    SCROLL: str = "SCROLL"
 
 
 def sa(a: Any, b: Any) -> Any:

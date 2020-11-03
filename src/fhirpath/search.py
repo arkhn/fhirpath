@@ -14,7 +14,7 @@ from typing import (
     Union,
     cast,
 )
-from urllib.parse import unquote_plus, urlparse
+from urllib.parse import unquote_plus
 from yarl import URL
 
 from multidict import MultiDict, MultiDictProxy
@@ -344,6 +344,8 @@ class Search(object):
             self.context.augment_with_types(additional_resource_types)
 
     def build_query_params_string(self, params):
+        # Otherwise, an expection is raised for None values
+        params = {k: v or "" for k, v in params.items()}
         return URL.build(
             query={**params, **{"_type": self.context.resource_types}}
         ).query_string
@@ -1704,8 +1706,10 @@ class Search(object):
         self.main_query = self.build()
 
         # TODO handle count with _includes
-        if self.result_params.get("_summary") == "count":
+        if self.result_params.get("_summary") == "count" or self.result_params.get("_count") == 0:
             main_result = self.main_query.count()
+        elif "_scroll_id" in self.result_params:
+            main_result = self.main_query.scroll()
         else:
             main_result = self.main_query.fetchall()
         assert main_result is not None
