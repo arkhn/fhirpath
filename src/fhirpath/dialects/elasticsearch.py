@@ -729,10 +729,6 @@ class ElasticSearchDialect(DialectBase):
     @staticmethod
     def apply_limit(limit_clause, body_structure):
         """ """
-        if limit_clause.empty:
-            # no limit! should be scroll
-            body_structure["scroll"] = "1m"
-            return
         if isinstance(limit_clause.limit, int):
             body_structure["size"] = limit_clause.limit
         if isinstance(limit_clause.offset, int):

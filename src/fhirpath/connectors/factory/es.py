@@ -113,7 +113,7 @@ class ElasticsearchConnection(Connection, EsConnMixin):
             )
         return info
 
-    def fetch(self, index, compiled_query):
+    def fetch(self, index, compiled_query, scroll="1m"):
         """xxx: must have use scroll+slice
         https://stackoverflow.com/questions/43211387/
         what-does-elasticsearch-automatic-slicing-do
@@ -122,8 +122,14 @@ class ElasticsearchConnection(Connection, EsConnMixin):
         """
         search_params = self.finalize_search_params(compiled_query, EngineQueryType.DML)
         conn = self.raw_connection
-        result = conn.search(
-            index=ElasticsearchConnection.real_index(index), **search_params
+        result = conn.search(index=index, **search_params, scroll=scroll)
+        self.evaluate_result(result)
+        return result
+
+    def scroll(self, scroll_id, scroll="1m"):
+        """ """
+        result = self.raw_connection.scroll(
+            body={"scroll_id": scroll_id}, scroll=scroll
         )
         self.evaluate_result(result)
         return result
@@ -136,14 +142,6 @@ class ElasticsearchConnection(Connection, EsConnMixin):
         conn = self.raw_connection
         result = conn.count(
             index=ElasticsearchConnection.real_index(index), **search_params
-        )
-        self.evaluate_result(result)
-        return result
-
-    def scroll(self, scroll_id, scroll="30s"):
-        """ """
-        result = self.raw_connection.scroll(
-            body={"scroll_id": scroll_id}, scroll=scroll
         )
         self.evaluate_result(result)
         return result
@@ -193,7 +191,7 @@ class AsyncElasticsearchConnection(Connection, EsConnMixin):
             return index()
         raise NotImplementedError
 
-    async def fetch(self, index, compiled_query):
+    async def fetch(self, index, compiled_query, scroll="1m"):
         """xxx: must have use scroll+slice
         https://stackoverflow.com/questions/43211387/
         what-does-elasticsearch-automatic-slicing-do
@@ -203,7 +201,17 @@ class AsyncElasticsearchConnection(Connection, EsConnMixin):
         search_params = self.finalize_search_params(compiled_query, EngineQueryType.DML)
         conn = self.raw_connection
         result = await conn.search(
-            index=await AsyncElasticsearchConnection.real_index(index), **search_params
+            index=await AsyncElasticsearchConnection.real_index(index),
+            **search_params,
+            scroll=scroll,
+        )
+        self.evaluate_result(result)
+        return result
+
+    async def scroll(self, scroll_id, scroll="1m"):
+        """ """
+        result = await self.raw_connection.scroll(
+            body={"scroll_id": scroll_id}, scroll=scroll
         )
         self.evaluate_result(result)
         return result
@@ -216,14 +224,6 @@ class AsyncElasticsearchConnection(Connection, EsConnMixin):
         conn = self.raw_connection
         result = await conn.count(
             index=await AsyncElasticsearchConnection.real_index(index), **search_params
-        )
-        self.evaluate_result(result)
-        return result
-
-    async def scroll(self, scroll_id, scroll="30s"):
-        """ """
-        result = await self.raw_connection.scroll(
-            body={"scroll_id": scroll_id}, scroll=scroll
         )
         self.evaluate_result(result)
         return result
@@ -262,13 +262,7 @@ class ElasticsearchConnectionFactory(ConnectionFactory):
         params.update(self.extra)
 
         def _make_bool(string):
-            return string.lower() in (
-                "true",
-                "t",
-                "yes",
-                "y",
-                "1",
-            )
+            return string.lower() in ("true", "t", "yes", "y", "1",)
 
         for url in urls:
             item = {"host": url.host, "port": url.port or 9200}
@@ -322,7 +316,6 @@ class ElasticsearchConnectionFactory(ConnectionFactory):
 def create(url, conn_class=None, **extra):
     """
     :param url: instance of URL or list of URL.
-
     :param conn_class: The Connection class.
     """
     use_es_serializer = extra.pop("use_es_serializer", False)

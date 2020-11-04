@@ -15,6 +15,7 @@ from typing import (
     cast,
 )
 from urllib.parse import unquote_plus
+from yarl import URL
 from warnings import warn
 
 from multidict import MultiDict, MultiDictProxy
@@ -64,6 +65,7 @@ has_dot_as: Pattern = re.compile(r"\.as\([a-z]+\)$", re.I ^ re.U)
 has_dot_is: Pattern = re.compile(r"\.is\([a-z]+\)$", re.I ^ re.U)
 has_dot_where: Pattern = re.compile(r"\.where\([a-z=\'\"()]+\)", re.I ^ re.U)
 parentheses_wrapped: Pattern = re.compile(r"^\(.+\)$")
+url_type: Pattern = re.compile(r"(.*)_type=.+(&.*)$")
 logger = logging.getLogger("fhirpath.search")
 
 DEFAULT_RESULT_COUNT = 100
@@ -334,6 +336,8 @@ class Search(object):
         elif isinstance(params, MultiDictProxy):
             all_params = params.copy()
 
+        self.query_params = self.build_query_params_string(all_params)
+
         self.result_params: Dict[str, str] = dict()
         self.search_params = None
 
@@ -346,6 +350,13 @@ class Search(object):
         additional_resource_types = self.result_params.get("_type")
         if additional_resource_types:
             self.context.augment_with_types(additional_resource_types)
+
+    def build_query_params_string(self, params):
+        # Otherwise, an expection is raised for None values
+        params = {k: v for k, v in params.items() if v is not None}
+        return URL.build(
+            query={**params, **{"_type": self.context.resource_types}}
+        ).query_string
 
     @staticmethod
     def validate_params(context, query_string, params):
@@ -428,6 +439,10 @@ class Search(object):
                 raise ValidationError("'page' cannot be multiple!")
             self.result_params["page"] = int(page[0])
 
+        scroll_id = all_params.popall("_scroll_id", [])
+        if scroll_id:
+            self.result_params["_scroll_id"] = scroll_id[0]
+
         _total = all_params.popall("_total", [])
 
         if len(_total) > 0:
@@ -480,6 +495,7 @@ class Search(object):
         builder = self.attach_sort_terms(builder)
         builder = self.attach_summary_terms(builder)
         builder = self.attach_limit_terms(builder)
+        builder = self.attach_scroll_id(builder)
 
         # handle _has predicates
         if self.reverse_chaining_results:
@@ -1640,19 +1656,25 @@ class Search(object):
                 offset = (current_page - 1) * self.result_params["_count"]
         return builder.limit(self.result_params["_count"], offset)
 
+    def attach_scroll_id(self, builder):
+        """ """
+        if "_scroll_id" in self.result_params:
+            return builder.set_scroll_id(self.result_params.get("_scroll_id"))
+        return builder
+
     def response(self, result, includes, as_json):
         """ """
         return self.context.engine.wrapped_with_bundle(
-            result, includes=includes, as_json=as_json
+            result, query_params=self.query_params, includes=includes, as_json=as_json
         )
 
     def __call__(self, as_json=False):
         """ """
-
         # TODO: chaining
 
         # reverse chaining (_has)
-        if self.result_params.get("_has"):
+        # TODO reverse chaining won't work together with paging
+        if "_has" in self.result_params and "_scroll_id" not in self.result_params:
             has_queries = self.has()
             # compute the intersection of referenced resources' ID
             # from the result of _has queries.
@@ -1681,8 +1703,13 @@ class Search(object):
         self.main_query = self.build()
 
         # TODO handle count with _includes
-        if self.result_params.get("_summary") == "count":
+        if (
+            self.result_params.get("_summary") == "count"
+            or self.result_params.get("_count") == 0
+        ):
             main_result = self.main_query.count_raw()
+        elif "_scroll_id" in self.result_params:
+            main_result = self.main_query.scroll()
         else:
             main_result = self.main_query.fetchall()
         assert main_result is not None

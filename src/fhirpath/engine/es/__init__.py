@@ -282,6 +282,8 @@ class ElasticsearchEngine(ElasticsearchEngineBase):
             raw_result = self.connection.fetch(self.get_index_name(), compiled)
         elif query_type == EngineQueryType.COUNT:
             raw_result = self.connection.count(self.get_index_name(), compiled)
+        elif query_type == EngineQueryType.SCROLL:
+            raw_result = self.connection.scroll(query._scroll_id)
         else:
             raise NotImplementedError
 
@@ -312,34 +314,30 @@ class ElasticsearchEngine(ElasticsearchEngineBase):
             source_filters = self._get_source_filters(selects)
 
         result = EngineResult(
-            header=EngineResultHeader(total=total), body=EngineResultBody()
+            header=EngineResultHeader(total=total),
+            body=EngineResultBody(),
+            scroll_id=rawresult.get("_scroll_id"),
         )
 
         # extract primary data
         if query_type != EngineQueryType.COUNT:
             self.extract_hits(source_filters, rawresult["hits"]["hits"], result.body)
 
-        if "_scroll_id" in rawresult and result.header.total > len(
-            rawresult["hits"]["hits"]
-        ):
-            # we need to fetch all!
-            consumed = len(rawresult["hits"]["hits"])
-
-            while result.header.total > consumed:
-                # xxx: dont know yet, if from_, size is better solution
-                raw_res = self.connection.scroll(rawresult["_scroll_id"])
-                if len(raw_res["hits"]["hits"]) == 0:
-                    break
-
-                self.extract_hits(source_filters, raw_res["hits"]["hits"], result.body)
-
-                consumed += len(raw_res["hits"]["hits"])
-
-                if result.header.total <= consumed:
-                    break
-
         return result
 
+    def current_url(self, query_params):
+        """
+        complete url from current request
+        return yarl.URL"""
+        raise NotImplementedError
+
+    def wrapped_with_bundle(self, result, query_params, includes=None, as_json=False):
+        """ """
+        url = self.current_url(query_params)
+        if includes is None:
+            includes = list()
+        wrapper = BundleWrapper(self, result, includes, url, "searchset")
+        return wrapper(as_json=as_json)
 
 @implementer(IElasticsearchEngine)
 class AsyncElasticsearchEngine(ElasticsearchEngineBase):
