@@ -101,7 +101,7 @@ class EngineResult(object):
     body: EngineResultBody
 
     def __init__(
-        self, header: EngineResultHeader, body: EngineResultBody, scroll_id: str = ""
+        self, header: EngineResultHeader, body: EngineResultBody, scroll_id: str = None
     ):
         """ """
         self.header = header
