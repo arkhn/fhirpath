@@ -353,7 +353,7 @@ class Search(object):
 
     def build_query_params_string(self, params):
         # Otherwise, an expection is raised for None values
-        params = {k: v or "" for k, v in params.items()}
+        params = {k: v for k, v in params.items() if v is not None}
         return URL.build(
             query={**params, **{"_type": self.context.resource_types}}
         ).query_string
@@ -1703,7 +1703,10 @@ class Search(object):
         self.main_query = self.build()
 
         # TODO handle count with _includes
-        if self.result_params.get("_summary") == "count" or self.result_params.get("_count") == 0:
+        if (
+            self.result_params.get("_summary") == "count"
+            or self.result_params.get("_count") == 0
+        ):
             main_result = self.main_query.count_raw()
         elif "_scroll_id" in self.result_params:
             main_result = self.main_query.scroll()
