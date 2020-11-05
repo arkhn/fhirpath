@@ -32,7 +32,6 @@ from fhirpath.enums import (
 from fhirpath.exceptions import ValidationError
 from fhirpath.fhirspec import (
     FHIRSearchSpecFactory,
-    lookup_fhir_resource_spec,
     ResourceSearchParameterDefinition,
     SearchParameter,
     lookup_fhir_resource_spec,
@@ -1541,6 +1540,21 @@ class Search(object):
 
         return builder.where(*terms_container)
 
+    def specify_sort_path(self, path_):
+        """When trying to sort on a complex element, we need to precise the leaf path on which
+        the sort should be made. For instance, when trying to sort on a search param which path is
+        a Period, we need to tell if we want to sort according to the start or the end of it.
+        """
+        # TODO add all the other cases
+        if path_.context.type_name == "Period":
+            path_ = ElementPath.from_el_path(f"{path_}.start")
+            path_.finalize(self.context.engine)
+        return path_
+
+    def get_sort_path(self, sort_param_def):
+        path_ = self.context.resolve_path_context(sort_param_def)
+        return self.specify_sort_path(path_)
+
     def attach_sort_terms(self, builder):
         """ """
         terms = list()
@@ -1553,7 +1567,7 @@ class Search(object):
                 for sort_param_def in self.context._get_search_param_definitions(
                     sort_field
                 ):
-                    path_ = self.context.resolve_path_context(sort_param_def)
+                    path_ = self.get_sort_path(sort_param_def)
                     terms.append(sort_(path_, order_))
 
         if len(terms) > 0:
