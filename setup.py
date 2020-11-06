@@ -54,6 +54,7 @@ requirements = [
     "fhir.resources>=6.0.0b7,<7.0",
     "yarl",
     "isodate",
+    "orjson",
 ]
 
 setup_requirements = ["pytest-runner", "setuptools_scm[toml]", "wheel"]

@@ -354,7 +354,7 @@ class Search(object):
         # Otherwise, an expection is raised for None values
         params = {k: v for k, v in params.items() if v is not None}
         return URL.build(
-            query={**params, **{"_type": self.context.resource_types}}
+            query={**params, **{"_type": ",".join(self.context.resource_types)}}
         ).query_string
 
     @staticmethod
