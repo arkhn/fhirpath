@@ -50,8 +50,8 @@ with open("HISTORY.rst") as history_file:
 requirements = [
     "zope.interface>=5.1.2",
     "multidict",
-    "fhirspec>=0.2.3",
-    "fhir.resources>=6.0.0b7,<7.0",
+    "fhirspec>=0.2.5",
+    "fhir.resources>=6.0.0b9,<7.0",
     "yarl",
     "isodate",
     "orjson",
@@ -70,6 +70,13 @@ test_requirements = [
     "elasticsearch[async]>7.8.0,<8.0.0",
     "SQLAlchemy",
     "pytz",
+    "mypy",
+    "requests==2.23.0",
+    "flake8==3.8.3",
+    "flake8-isort==3.0.0",
+    "flake8-bugbear==20.1.4",
+    "isort==4.3.21",
+    "black",
 ]
 docs_requirements = [
     "sphinx",
@@ -81,21 +88,15 @@ docs_requirements = [
 development_requirements = [
     "Jinja2==2.11.1",
     "MarkupSafe==1.1.1",
-    "requests==2.23.0",
     "colorlog==2.10.0",
     "certifi",
-    "flake8==3.8.3",
-    "flake8-isort==3.0.0",
-    "flake8-bugbear==20.1.4",
-    "isort==4.3.21",
-    "black",
-    "mypy",
+    "orjson",
     "zest-releaser[recommended]",
 ]
 
 setup(
     name="fhirpath",
-    version="0.9.2.dev0",
+    version="0.10.3.dev0",
     author="Md Nazrul Islam",
     author_email="email2nazrul@gmail.com",
     classifiers=[

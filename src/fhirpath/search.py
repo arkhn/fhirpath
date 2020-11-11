@@ -105,7 +105,8 @@ class SearchContext(object):
         self.definitions = self.get_parameters_definition(self.engine.fhir_release)
 
     def get_parameters_definition(
-        self, fhir_release: FHIR_VERSION,
+        self,
+        fhir_release: FHIR_VERSION,
     ) -> List[ResourceSearchParameterDefinition]:
         """ """
         fhir_release = FHIR_VERSION.normalize(fhir_release)
@@ -470,8 +471,8 @@ class Search(object):
         if _revinclude:
             self.result_params["_revinclude"] = _revinclude
 
-        _elements = all_params.popone("_elements", None)
-        if _elements:
+        _elements = all_params.popone("_elements", [])
+        if len(_elements) > 0:
             self.result_params["_elements"] = _elements.split(",")
 
         _contained = all_params.popone("_contained", None)
@@ -489,8 +490,7 @@ class Search(object):
         builder = Q_(self.context.resource_types, self.context.engine)
 
         builder = self.attach_where_terms(builder)
-        builder = self.attach_select_terms(builder)
-        builder = self.attach_summary_terms(builder)
+        builder = self.attach_elements_terms(builder)
         builder = self.attach_sort_terms(builder)
         builder = self.attach_summary_terms(builder)
         builder = self.attach_limit_terms(builder)
@@ -1574,7 +1574,7 @@ class Search(object):
             return builder.sort(*terms)
         return builder
 
-    def attach_select_terms(self, builder):
+    def attach_elements_terms(self, builder):
         """ """
         if "_elements" not in self.result_params:
             return builder

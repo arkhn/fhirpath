@@ -2,8 +2,31 @@
 History
 =======
 
-0.9.2 (unreleased)
-------------------
+0.10.3 (unreleased)
+-------------------
+
+- Nothing changed yet.
+
+
+0.10.2 (2020-11-06)
+-------------------
+
+Improvements
+
+- ``orjson`` is no longer required. ``json_dumps`` and ``json_loads`` now dynamically supports
+  orjson and simplejson.
+
+
+0.10.1 (2020-11-04)
+-------------------
+
+Bugfixes
+
+- ``Connection.raw_connection`` was wrongly wrapped by ``AsyncElasticsearchConnection/ElasticsearchConnection.from_url()`` with self, instead of ``elasticsearch.AsyncElasticsearch/elasticsearch.Elasticsearch``'s instance.
+
+
+0.10.0 (2020-11-04)
+-------------------
 
 Improvements
 
@@ -14,14 +37,13 @@ Improvements
 
 - Added support for `_summary=text|data|count|true|false`. [arkhn]
 
+- Added support for `_elements` search parameter. [arkhn]
+
 
 Breaking
 
 - ``async_result`` parameter is no longer needed for SearchContext, Search and Query (included async version) as from now all
   engine contains that information (``engine_class.is_async()``).
-
-- `QueryResult.count()` now returns a fhir.resources.bundle.Bundle instead of an integer. The previous behaviour of `.count()` is still implemented by the `.__len__()` method. [arkhn]
-
 
 0.9.1 (2020-10-24)
 ------------------
