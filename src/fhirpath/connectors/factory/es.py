@@ -2,12 +2,12 @@
 import inspect
 import logging
 
-import orjson
 from elasticsearch.exceptions import SerializationError
 from pydantic.json import pydantic_encoder
 from zope.interface import Invalid
 
 from fhirpath.enums import EngineQueryType
+from fhirpath.json import json_dumps, json_loads
 from fhirpath.utils import import_string
 
 from ..connection import Connection
@@ -19,8 +19,9 @@ __author__ = "Md Nazrul Islam <email2nazrul@gmail.com>"
 logger = logging.getLogger("fhirpath.providers.plone.engine")
 
 
-class OrJSONSerializer:
-    """ORJSON serializer"""
+class ElasticsearchJSONSerializer:
+    """Custom serializer, supports orjson, simplejson,
+    with correct default encoder which fit for FHIR Resources"""
 
     mimetype = "application/json"
 
@@ -29,8 +30,8 @@ class OrJSONSerializer:
 
     def loads(self, s):
         try:
-            return orjson.loads(s)
-        except (ValueError, TypeError, orjson.JSONDecodeError) as e:
+            return json_loads(s)
+        except (ValueError, TypeError) as e:
             raise SerializationError(s, e)
 
     def dumps(self, data):
@@ -38,9 +39,8 @@ class OrJSONSerializer:
         if isinstance(data, (str, bytes)):
             return data
         try:
-            value_bytes = orjson.dumps(data, default=pydantic_encoder)
-            return value_bytes.decode(encoding="utf-8", errors="strict")
-        except (ValueError, TypeError, orjson.JSONEncodeError) as e:
+            return json_dumps(data, return_bytes=False)
+        except (ValueError, TypeError) as e:
             raise SerializationError(data, e)
 
 
@@ -88,7 +88,7 @@ class ElasticsearchConnection(Connection, EsConnMixin):
         else:
             url = _parse_rfc1738_args(url)
 
-        self = cls(create(url, "elasticsearch.Elasticsearch"))
+        self = create(url, "elasticsearch.Elasticsearch", wrapper_class=cls)
         return self
 
     @staticmethod
@@ -162,7 +162,7 @@ class AsyncElasticsearchConnection(Connection, EsConnMixin):
         else:
             url = _parse_rfc1738_args(url)
 
-        self = cls(create(url, "elasticsearch.AsyncElasticsearch"))
+        self = create(url, "elasticsearch.AsyncElasticsearch", wrapper_class=cls)
         return self
 
     async def server_info(self):
@@ -239,7 +239,7 @@ class ElasticsearchConnectionFactory(ConnectionFactory):
         else:
             url_ = self.url
 
-        wrapper_class = url_.query.get("wrapper_class", None)
+        wrapper_class = url_.query.get("wrapper_class", self.wrapper_class)
         if wrapper_class is None:
             if raw_conn.__class__.__name__ == "AsyncElasticsearch":
                 wrapper_class = AsyncElasticsearchConnection
@@ -320,7 +320,7 @@ def create(url, conn_class=None, **extra):
     """
     use_es_serializer = extra.pop("use_es_serializer", False)
     if "serializer" not in extra and use_es_serializer is False:
-        extra["serializer"] = OrJSONSerializer()
+        extra["serializer"] = ElasticsearchJSONSerializer()
 
     if conn_class is None:
         conn_class = "elasticsearch.Elasticsearch"
