@@ -14,10 +14,11 @@ from fhirpath.search import AsyncSearch
 from fhirpath.search import SearchContext
 from fhirpath.exceptions import ValidationError
 
-from fhir.resources.patient import Patient
-from fhir.resources.observation import Observation
-from fhir.resources.practitioner import Practitioner
 from fhir.resources.medicationrequest import MedicationRequest
+from fhir.resources.observation import Observation
+from fhir.resources.patient import Patient
+from fhir.resources.practitioner import Practitioner
+from fhir.resources.task import Task
 
 
 __author__ = "Md Nazrul Islam<email2nazrul@gmail.com>"
@@ -862,6 +863,16 @@ def test_search_include(es_data, engine):
         ),
     ):
         fhir_search()
+
+
+def test_search_include_absent_reference(es_data, engine):
+    search_context = SearchContext(engine, "Task")
+    params = (("_include", "Observation:based-on"),)
+    fhir_search = Search(search_context, params=params)
+    bundle = fhir_search()
+    assert bundle.total == 1
+    assert len(bundle.entry) == 1
+    assert isinstance(bundle.entry[0].resource, Task)
 
 
 def test_search_has(es_data, engine):

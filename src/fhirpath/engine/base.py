@@ -168,9 +168,8 @@ class EngineResult(object):
                     return
 
             if "reference" not in ref_attr:
-                raise ValueError(
-                    f"attribute {ref_attr} doesn't have a literal reference"
-                )
+                return
+
             # FIXME: this does not work with references using absolute URLs
             referenced_resource, _id = ref_attr["reference"].split("/")
             ids[referenced_resource].append(_id)
