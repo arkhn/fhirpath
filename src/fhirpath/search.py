@@ -105,8 +105,7 @@ class SearchContext(object):
         self.definitions = self.get_parameters_definition(self.engine.fhir_release)
 
     def get_parameters_definition(
-        self,
-        fhir_release: FHIR_VERSION,
+        self, fhir_release: FHIR_VERSION,
     ) -> List[ResourceSearchParameterDefinition]:
         """ """
         fhir_release = FHIR_VERSION.normalize(fhir_release)
@@ -184,8 +183,7 @@ class SearchContext(object):
             elif len(raw_value) == 1:
                 raw_value = raw_value[0]
 
-            values: List = list()
-            self.normalize_param_value(raw_value, sp, values)
+            values: List = self.normalize_param_value(raw_value, sp)
 
             if len(values) == 0:
                 # empty parameters are not considered an error, they should be ignored
@@ -201,20 +199,20 @@ class SearchContext(object):
         return normalized_params
 
     def normalize_param_value(
-        self, raw_value: Union[List, str], search_param: SearchParameter, container
+        self, raw_value: Union[List, str], search_param: SearchParameter
     ):
-        """ """
+        normalized_values = []
         if not raw_value:
-            return
+            return []
 
         elif isinstance(raw_value, list):
             bucket: List[str] = list()
             for rv in raw_value:
-                self.normalize_param_value(rv, search_param, bucket)
+                bucket.extend(self.normalize_param_value(rv, search_param))
             if len(bucket) == 1:
-                container.append(bucket[0])
+                normalized_values.append(bucket[0])
             else:
-                container.append(bucket)
+                normalized_values.append(bucket)
 
         else:
             escape_ = has_escape_comma(raw_value)
@@ -239,9 +237,11 @@ class SearchContext(object):
                         break
                 bucket_.append((comparison_operator, val_))
             if len(bucket_) == 1:
-                container.append(bucket_[0])
+                normalized_values.append(bucket_[0])
             else:
-                container.append((None, bucket_))
+                normalized_values.append((None, bucket_))
+
+        return normalized_values
 
     def _get_search_param_definitions(self, param_name) -> List[SearchParameter]:
         """ """
@@ -282,8 +282,7 @@ class SearchContext(object):
             ".".join([param_def.expression, param_def.component[0]["expression"]]),
             value_parts[0],
         ]
-        part1_param_value = list()
-        self.normalize_param_value(part1[1], param_def, part1_param_value)
+        part1_param_value = self.normalize_param_value(part1[1], param_def)
         if len(part1_param_value) == 1:
             part1_param_value = part1_param_value[0]
         composite_bucket.append(
@@ -296,8 +295,7 @@ class SearchContext(object):
                 value_parts[1],
             ]
             part2.append(part_)
-        part2_param_value = list()
-        self.normalize_param_value(part2[0][1], param_def, part2_param_value)
+        part2_param_value = self.normalize_param_value(part2[0][1], param_def)
 
         if len(part2_param_value) == 1:
             part2_param_value = part2_param_value[0]
@@ -352,6 +350,8 @@ class Search(object):
             self.context.augment_with_types(additional_resource_types)
 
     def build_query_params_string(self, params):
+        if not params:
+            return ""
         # Otherwise, an expection is raised for None values
         params = {k: v for k, v in params.items() if v is not None}
         return URL.build(
