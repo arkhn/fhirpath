@@ -285,9 +285,9 @@ class SearchContext(object):
 
         return [
             self.parse_composite_parameter_component(
-                component, raw_value, param_def, modifier
+                component, value_part, param_def, modifier
             )
-            for component in param_def.component
+            for component, value_part in zip(param_def.component, value_parts)
         ]
 
     def parse_composite_parameter_component(
@@ -724,7 +724,12 @@ class Search(object):
                 terms = list()
                 for nd in normalized_data:
                     self.add_term(nd, terms)
-                return G_(*terms, path=None, type_=GroupType.DECOUPLED)
+                # I think we'll be there only in the case of composite search params
+                # The Group path is only needed to build nested queries so using
+                # whichever component path should be ok. This could still use a refacto though...
+                group_term = G_(*terms, path=nd[0], type_=GroupType.COUPLED)
+                terms_container.append(group_term)
+                return group_term
 
             else:
                 normalized_data = normalized_data[0]
