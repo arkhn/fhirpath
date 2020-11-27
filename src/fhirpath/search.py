@@ -147,7 +147,7 @@ class SearchContext(object):
         ):
             raise NotImplementedError
 
-        dotted_path = search_param.expression
+        dotted_path = search_param.expression[0]
 
         if parentheses_wrapped.match(dotted_path):
             dotted_path = dotted_path[1:-1]
@@ -294,7 +294,7 @@ class SearchContext(object):
         self, component, raw_value, param_def, modifier
     ):
         component_dotted_path = ".".join(
-            [param_def.expression, component["expression"]]
+            [param_def.expression[0], component["expression"]]
         )
 
         component_param_value = self.normalize_param_value(raw_value, param_def)

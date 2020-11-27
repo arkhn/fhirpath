@@ -157,14 +157,24 @@ class SearchParameterDefinition(object):
         if dict_value.get("expression", None) is None:
             for base in dict_value["base"]:
                 self.expression_map[base] = None
-
-            return self
-        elif len(dict_value["base"]) == 1:
-            self.expression_map[dict_value["base"][0]] = dict_value["expression"]
-
             return self
 
-        for expression in dict_value["expression"].split("|"):
+        # Handle the weird case where there is only one expression but several xpaths
+        if (
+            "|" not in dict_value["expression"]
+            and "xpath" in dict_value
+            and "|" in dict_value.get("xpath")
+        ):
+            expressions = dict_value.get("xpath").replace("/f:", ".").replace("f:", "")
+        else:
+            expressions = dict_value["expression"]
+
+        if len(dict_value["base"]) == 1:
+            self.expression_map[dict_value["base"][0]] = expressions
+
+            return self
+
+        for expression in expressions.split("|"):
             exp = expression.strip()
             if exp.startswith("("):
                 base = exp[1:].split(".")[0]
@@ -229,7 +239,7 @@ class SearchParameter(object):
         """ """
         exp = definition.expression_map[resource_type]
         if not exp:
-            return exp
+            return []  # exp
         # try cleanup Zero Width Space
         if "\u200b" in exp:
             exp = exp.replace("\u200b", "")
@@ -238,7 +248,7 @@ class SearchParameter(object):
             # we take first one!
             exp = exp.split("|")[0]
 
-        return exp.strip()
+        return [exp.strip()]
 
     def clone(self):
         """ """
@@ -312,10 +322,11 @@ class ResourceSearchParameterDefinition(object):
         """ """
         for key, val in other.__storage__.items():
             copied = val.clone()
-            if copied.expression and other.resource_type in copied.expression:
-                copied.expression = copied.expression.replace(
-                    other.resource_type, self.resource_type
-                )
+            for ind, expr in enumerate(copied.expression):
+                if other.resource_type in expr:
+                    copied.expression[ind] = expr.replace(
+                        other.resource_type, self.resource_type
+                    )
 
             if copied.xpath and other.resource_type in copied.xpath:
                 copied.xpath = copied.xpath.replace(
