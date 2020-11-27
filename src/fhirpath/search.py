@@ -147,12 +147,21 @@ class SearchContext(object):
         ):
             raise NotImplementedError
 
-        dotted_path = search_param.expression[0]
+        path_contexts = []
+        for dotted_path in search_param.expression:
+            if parentheses_wrapped.match(dotted_path):
+                dotted_path = dotted_path[1:-1]
 
-        if parentheses_wrapped.match(dotted_path):
-            dotted_path = dotted_path[1:-1]
+            if any(
+                dotted_path.endswith(unsupported)
+                for unsupported in ("Timing", "SampledData")
+            ):
+                # FIXME hot fix because we may accidentally try to search on unsupported
+                # types when the search param has several expressions
+                continue
+            path_contexts.append(self._dotted_path_to_path_context(dotted_path))
 
-        return self._dotted_path_to_path_context(dotted_path)
+        return path_contexts
 
     def normalize_param(
         self, param_name, raw_value
@@ -194,8 +203,8 @@ class SearchContext(object):
                 param_value_ = values
 
             Search.validate_normalized_value(param_name_, param_value_, modifier_)
-            _path = self.resolve_path_context(sp)
-            normalized_params.append((_path, param_value_, modifier_))
+            paths = self.resolve_path_context(sp)
+            normalized_params.append((paths, param_value_, modifier_))
         return normalized_params
 
     def normalize_param_value(
@@ -281,7 +290,12 @@ class SearchContext(object):
             )
 
         if any("|" in component["expression"] for component in param_def.component):
-            raise NotImplementedError("Can't perform search on choice elements.")
+            raise NotImplementedError(
+                "Can't perform search on composite params targetting choice elements."
+            )
+
+        if len(param_def.expression) != 1:
+            raise NotImplementedError("Composite param should only have 1 expression.")
 
         return [
             self.parse_composite_parameter_component(
@@ -735,6 +749,18 @@ class Search(object):
                 normalized_data = normalized_data[0]
 
         path_, param_value, modifier = normalized_data
+
+        if isinstance(path_, list):
+            terms = list()
+            for path in path_:
+                self.add_term((path, param_value, modifier), terms)
+            # We'll be here when searching with search params having
+            # more than one expression.
+            # The Group path is only needed to build nested queries so using
+            # whichever component path should be ok. This could still use a refacto though... WRONG! FIXME
+            group_term = G_(*terms, path=path_[0], type_=GroupType.DECOUPLED)
+            terms_container.append(group_term)
+            return group_term
 
         if path_._where is not None:
             if path_._where.type == WhereConstraintType.T3:
@@ -1553,8 +1579,13 @@ class Search(object):
         return path_
 
     def get_sort_path(self, sort_param_def):
-        path_ = self.context.resolve_path_context(sort_param_def)
-        return self.specify_sort_path(path_)
+        # TODO what if we sort on a choice element search param
+        paths = self.context.resolve_path_context(sort_param_def)
+        if len(paths) != 1:
+            raise NotImplementedError(
+                "Cannot sort on search parameters with several expressions."
+            )
+        return self.specify_sort_path(paths[0])
 
     def attach_sort_terms(self, builder):
         """ """

@@ -239,16 +239,9 @@ class SearchParameter(object):
         """ """
         exp = definition.expression_map[resource_type]
         if not exp:
-            return []  # exp
-        # try cleanup Zero Width Space
-        if "\u200b" in exp:
-            exp = exp.replace("\u200b", "")
-        if "|" in exp:
-            # some case for example name: "Organization.name | Organization.alias"
-            # we take first one!
-            exp = exp.split("|")[0]
+            return []
 
-        return [exp.strip()]
+        return [e.strip().replace("\u200b", "") for e in exp.split("|")]
 
     def clone(self):
         """ """
