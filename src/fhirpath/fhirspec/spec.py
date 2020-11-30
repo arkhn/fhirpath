@@ -117,6 +117,7 @@ class SearchParameterDefinition(object):
         xpath: None
         multiple_or: None
         multiple_and: None
+        expression: None
         component: None
 
     __slots__ = (
@@ -131,6 +132,7 @@ class SearchParameterDefinition(object):
         "xpath",
         "multiple_or",
         "multiple_and",
+        "expression",
         "component",
     )
 
@@ -144,12 +146,13 @@ class SearchParameterDefinition(object):
         self.type = dict_value["type"]
 
         # Add conditional None
-        self.xpath = dict_value.get("xpath")
+        self.xpath = dict_value.get("xpath", "")
         self.modifier = dict_value.get("modifier", None)
         self.comparator = dict_value.get("comparator", None)
         self.target = dict_value.get("target", None)
         self.multiple_or = dict_value.get("multipleOr", None)
         self.multiple_and = dict_value.get("multipleAnd", None)
+        self.expression = dict_value.get("expression", "")
         self.component = dict_value.get("component", None)
 
         # Make expression map combined with base and expression
@@ -157,14 +160,21 @@ class SearchParameterDefinition(object):
         if dict_value.get("expression", None) is None:
             for base in dict_value["base"]:
                 self.expression_map[base] = None
-
-            return self
-        elif len(dict_value["base"]) == 1:
-            self.expression_map[dict_value["base"][0]] = dict_value["expression"]
-
             return self
 
-        for expression in dict_value["expression"].split("|"):
+        # Handle the weird case where there is only one expression but several xpaths
+        # For instance, see the search param ServiceRequest-occurrence
+        if "|" not in self.expression and "|" in self.xpath:
+            expressions = self.xpath.replace("/f:", ".").replace("f:", "")
+        else:
+            expressions = self.expression
+
+        if len(dict_value["base"]) == 1:
+            self.expression_map[dict_value["base"][0]] = expressions
+
+            return self
+
+        for expression in expressions.split("|"):
             exp = expression.strip()
             if exp.startswith("("):
                 base = exp[1:].split(".")[0]
@@ -196,7 +206,7 @@ class SearchParameter(object):
     __slots__ = (
         "name",
         "code",
-        "expression",
+        "expressions",
         "type",
         "modifier",
         "comparator",
@@ -208,7 +218,7 @@ class SearchParameter(object):
     )
 
     @classmethod
-    def from_definition(cls, resource_type, definition):
+    def from_definition(cls, resource_type: str, definition: SearchParameterDefinition):
         """ """
         self = cls()
         self.name = definition.name
@@ -221,24 +231,17 @@ class SearchParameter(object):
         self.multiple_or = definition.multiple_or
         self.multiple_and = definition.multiple_and
         self.component = definition.component
-        self.expression = self.get_expression(resource_type, definition)
+        self.expressions = self.get_expressions(resource_type, definition)
 
         return self
 
-    def get_expression(self, resource_type, definition):
+    def get_expressions(self, resource_type: str, definition: SearchParameterDefinition):
         """ """
         exp = definition.expression_map[resource_type]
         if not exp:
-            return exp
-        # try cleanup Zero Width Space
-        if "\u200b" in exp:
-            exp = exp.replace("\u200b", "")
-        if "|" in exp:
-            # some case for example name: "Organization.name | Organization.alias"
-            # we take first one!
-            exp = exp.split("|")[0]
+            return []
 
-        return exp.strip()
+        return [e.strip().replace("\u200b", "") for e in exp.split("|")]
 
     def clone(self):
         """ """
@@ -259,7 +262,7 @@ class SearchParameter(object):
         newone.target = copy(self.target)
         newone.multiple_or = copy(self.multiple_or)
         newone.multiple_and = copy(self.multiple_and)
-        newone.expression = copy(self.expression)
+        newone.expressions = copy(self.expressions)
 
         return newone
 
@@ -312,10 +315,11 @@ class ResourceSearchParameterDefinition(object):
         """ """
         for key, val in other.__storage__.items():
             copied = val.clone()
-            if copied.expression and other.resource_type in copied.expression:
-                copied.expression = copied.expression.replace(
-                    other.resource_type, self.resource_type
-                )
+            for ind, expr in enumerate(copied.expressions):
+                if other.resource_type in expr:
+                    copied.expressions[ind] = expr.replace(
+                        other.resource_type, self.resource_type
+                    )
 
             if copied.xpath and other.resource_type in copied.xpath:
                 copied.xpath = copied.xpath.replace(

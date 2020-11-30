@@ -135,14 +135,11 @@ class EngineResult(object):
             raise ValueError(
                 "You cannot extract a reference for a search parameter that is not of type reference."
             )
-        if not isinstance(search_param.expression, str):
+        if not search_param.expressions:
             raise ValueError(
                 f"'expression' is not defined for search parameter {search_param.name}"
             )
         ids: Dict = defaultdict(list)
-
-        # use ElementPath to parse fhirpath expressions like .where()
-        path_element = ElementPath(search_param.expression)
 
         def browse(node, path):
             parts = path.split(".", 1)
@@ -156,7 +153,7 @@ class EngineResult(object):
             else:
                 return browse(node[parts[0]], parts[1])
 
-        def append_ref(ref_attr):
+        def append_ref(ref_attr, path_element):
             # if the searchparam expression contains .where() statement, skip references
             # that do not match the required resource type
             if (
@@ -175,17 +172,21 @@ class EngineResult(object):
             ids[referenced_resource].append(_id)
 
         # remove the resource type from the path
-        _, path = path_element._path.split(".", 1)
         for row in self.body:
-            resource = row[0]
-            ref_attribute = browse(resource, path)
+            for expr in search_param.expressions:
+                # use ElementPath to parse fhirpath expressions like .where()
+                path_element = ElementPath(expr)
 
-            if ref_attribute is None:
-                continue
-            elif isinstance(ref_attribute, list):
-                for r in ref_attribute:
-                    append_ref(r)
-            else:
-                append_ref(ref_attribute)
+                _, path = path_element._path.split(".", 1)
+                resource = row[0]
+                ref_attribute = browse(resource, path)
+
+                if ref_attribute is None:
+                    continue
+                elif isinstance(ref_attribute, list):
+                    for r in ref_attribute:
+                        append_ref(r, path_element)
+                else:
+                    append_ref(ref_attribute, path_element)
 
         return ids

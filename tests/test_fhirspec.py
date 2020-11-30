@@ -100,7 +100,7 @@ def test_fhir_search_spec():
     spec.write()
 
     resource_search_params = storage.get("Resource")
-    assert resource_search_params._id.expression == "Resource.id"
+    assert resource_search_params._id.expressions == ["Resource.id"]
 
     patient_params = storage.get("Patient")
 

@@ -135,7 +135,7 @@ class SearchContext(object):
 
     def resolve_path_context(self, search_param: SearchParameter):
         """ """
-        if search_param.expression is None:
+        if search_param.expressions is None:
             raise NotImplementedError
 
         # Some Safeguards
@@ -147,12 +147,14 @@ class SearchContext(object):
         ):
             raise NotImplementedError
 
-        dotted_path = search_param.expression
+        path_contexts: List[ElementPath] = []
+        for dotted_path in search_param.expressions:
+            if parentheses_wrapped.match(dotted_path):
+                dotted_path = dotted_path[1:-1]
 
-        if parentheses_wrapped.match(dotted_path):
-            dotted_path = dotted_path[1:-1]
+            path_contexts.append(self._dotted_path_to_path_context(dotted_path))
 
-        return self._dotted_path_to_path_context(dotted_path)
+        return path_contexts
 
     def normalize_param(
         self, param_name, raw_value
@@ -194,8 +196,8 @@ class SearchContext(object):
                 param_value_ = values
 
             Search.validate_normalized_value(param_name_, param_value_, modifier_)
-            _path = self.resolve_path_context(sp)
-            normalized_params.append((_path, param_value_, modifier_))
+            paths = self.resolve_path_context(sp)
+            normalized_params.append((paths, param_value_, modifier_))
         return normalized_params
 
     def normalize_param_value(
@@ -281,7 +283,12 @@ class SearchContext(object):
             )
 
         if any("|" in component["expression"] for component in param_def.component):
-            raise NotImplementedError("Can't perform search on choice elements.")
+            raise NotImplementedError(
+                "Can't perform search on composite params targetting choice elements."
+            )
+
+        if len(param_def.expressions) != 1:
+            raise NotImplementedError("Composite param should only have 1 expression.")
 
         return [
             self.parse_composite_parameter_component(
@@ -294,7 +301,7 @@ class SearchContext(object):
         self, component, raw_value, param_def, modifier
     ):
         component_dotted_path = ".".join(
-            [param_def.expression, component["expression"]]
+            [param_def.expressions[0], component["expression"]]
         )
 
         component_param_value = self.normalize_param_value(raw_value, param_def)
@@ -499,7 +506,7 @@ class Search(object):
             for resource_type, ids in self.reverse_chaining_results.items():
                 search_context = SearchContext(self.context.engine, resource_type)
                 normalized_data = search_context.normalize_param("_id", ",".join(ids))
-                self.add_term(normalized_data, terms)
+                terms.extend(self.build_terms(normalized_data))
 
             builder = builder.where(*terms)
 
@@ -562,8 +569,7 @@ class Search(object):
             # Build a Q_ (query) object to join the resource based on reference ids.
             builder = Q_(from_resource_type, from_context.engine)
             normalized_data = from_context.normalize_param(value_param_raw, value)
-            terms_container: List = []
-            self.add_term(normalized_data, terms_container)
+            terms_container = self.build_terms(normalized_data)
 
             builder = builder.where(*terms_container)
             self.attach_limit_terms(builder)
@@ -637,7 +643,7 @@ class Search(object):
                 normalized_data = search_context.normalize_param(
                     "_id", ",".join(ids[resource_type])
                 )
-                self.add_term(normalized_data, terms)
+                terms.extend(self.build_terms(normalized_data))
 
             builder = builder.where(*terms)
             self.attach_limit_terms(builder)
@@ -707,7 +713,7 @@ class Search(object):
                 normalized_data = search_context.normalize_param(
                     ref_param_raw, ",".join(resource_ids)
                 )
-                self.add_term(normalized_data, terms)
+                terms.extend(self.build_terms(normalized_data))
 
             builder = builder.where(*terms)
             self.attach_limit_terms(builder)
@@ -717,47 +723,73 @@ class Search(object):
 
         return include_queries
 
-    def add_term(self, normalized_data, terms_container):
-        """ """
+    def build_terms(self, normalized_data: Tuple):
+        terms_container = []
         if isinstance(normalized_data, list):
             if len(normalized_data) > 1:
                 terms = list()
                 for nd in normalized_data:
-                    self.add_term(nd, terms)
-                # I think we'll be there only in the case of composite search params
-                # The Group path is only needed to build nested queries so using
-                # whichever component path should be ok. This could still use a refacto though...
+                    terms.append(self.build_term(nd))
+                # We'll be here in the case of composite search params.
+                # The Group path is only needed to build queries on arrays (we need to know
+                # at which path we have arrays instead of objects).
+                # So using whichever component path should be ok.
+                # This could still use a refacto though...
                 group_term = G_(*terms, path=nd[0], type_=GroupType.COUPLED)
                 terms_container.append(group_term)
-                return group_term
+                return terms_container
 
             else:
                 normalized_data = normalized_data[0]
 
-        path_, param_value, modifier = normalized_data
+        paths, param_value, modifier = normalized_data
 
-        if path_._where is not None:
-            if path_._where.type == WhereConstraintType.T3:
+        terms = list()
+        for path in paths:
+            # Skip not implemented types
+            # When several types are targeted, we may want to skip the ones
+            # that are not implemented yet
+            try:
+                terms.append(self.build_term((path, param_value, modifier)))
+            except NotImplementedError:
+                pass
+        # We'll be here when search params have more than one expression.
+        # The Group path is only needed to build queries on arrays (we need to know
+        # at which path we have arrays instead of objects).
+        # So if we're dealing with choice elements, using whichever
+        # component path should be ok. But some search params are searching
+        # on leaves that may have different ancestors... FIXME
+        group_term = G_(*terms, path=paths[0], type_=GroupType.DECOUPLED)
+        terms_container.append(group_term)
+
+        return terms_container
+
+    def build_term(self, normalized_data: Tuple):
+        """ """
+        path, param_value, modifier = normalized_data
+
+        if path._where is not None:
+            if path._where.type == WhereConstraintType.T3:
                 # we know what to do
                 raise NotImplementedError
-        elif path_._is is not None:
+        elif path._is is not None:
             raise NotImplementedError
 
         if modifier in ("missing", "exists"):
-            term = self.create_exists_term(path_, param_value, modifier)
+            term = self.create_exists_term(path, param_value, modifier)
 
         elif (
-            hasattr(path_.context.type_class, "is_primitive")
-            and not path_.context.type_class.is_primitive()
+            hasattr(path.context.type_class, "is_primitive")
+            and not path.context.type_class.is_primitive()
         ):
             # we need normalization
-            klass_name = path_.context.type_class.fhir_type_name()
+            klass_name = path.context.type_class.fhir_type_name()
             if klass_name == "Reference":
                 if modifier == "identifier":
-                    path_ = path_ / "identifier"
+                    path = path / "identifier"
                     term_factory = self.create_identifier_term
                 else:
-                    path_ = path_ / "reference"
+                    path = path / "reference"
                     term_factory = self.create_term
             elif klass_name == "Identifier":
                 term_factory = self.create_identifier_term
@@ -781,11 +813,11 @@ class Search(object):
                 raise NotImplementedError(
                     f"Can't perform search on element of type {klass_name}"
                 )
-            term = term_factory(path_, param_value, modifier)
+            term = term_factory(path, param_value, modifier)
         else:
-            term = self.create_term(path_, param_value, modifier)
+            term = self.create_term(path, param_value, modifier)
 
-        terms_container.append(term)
+        return term
 
     def create_identifier_term(self, path_, param_value, modifier):
         """ """
@@ -1537,7 +1569,7 @@ class Search(object):
             raw_value = list(self.search_params.getall(param_name, []))
             normalized_params = self.context.normalize_param(param_name, raw_value)
             for np in normalized_params:
-                self.add_term(np, terms_container)
+                terms_container.extend(self.build_terms(np))
 
         return builder.where(*terms_container)
 
@@ -1553,8 +1585,13 @@ class Search(object):
         return path_
 
     def get_sort_path(self, sort_param_def):
-        path_ = self.context.resolve_path_context(sort_param_def)
-        return self.specify_sort_path(path_)
+        # TODO what if we sort on a choice element search param
+        paths = self.context.resolve_path_context(sort_param_def)
+        if len(paths) != 1:
+            raise NotImplementedError(
+                "Cannot sort on search parameters with several expressions."
+            )
+        return self.specify_sort_path(paths[0])
 
     def attach_sort_terms(self, builder):
         """ """
