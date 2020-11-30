@@ -135,7 +135,7 @@ class EngineResult(object):
             raise ValueError(
                 "You cannot extract a reference for a search parameter that is not of type reference."
             )
-        if not search_param.expression:
+        if not search_param.expressions:
             raise ValueError(
                 f"'expression' is not defined for search parameter {search_param.name}"
             )
@@ -173,7 +173,7 @@ class EngineResult(object):
 
         # remove the resource type from the path
         for row in self.body:
-            for expr in search_param.expression:
+            for expr in search_param.expressions:
                 # use ElementPath to parse fhirpath expressions like .where()
                 path_element = ElementPath(expr)
 
