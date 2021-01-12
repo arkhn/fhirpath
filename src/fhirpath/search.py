@@ -206,7 +206,6 @@ class SearchContext(object):
         normalized_values = []
         if not raw_value:
             return []
-
         elif isinstance(raw_value, list):
             bucket: List[str] = list()
             for rv in raw_value:
@@ -388,7 +387,7 @@ class Search(object):
             parts = q.split("=")
             param_name = unquote_plus(parts[0])
             try:
-                value = parts[1] and unquote_plus(parts[1]) or None
+                value = parts[1] or None
             except IndexError:
                 if not allow_none:
                     continue
