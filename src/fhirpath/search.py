@@ -383,19 +383,18 @@ class Search(object):
         param:allow_none
         """
         params = MultiDict()
-
-        for q in query_string.split("&"):
+        decoded_query = unquote_plus(query_string)
+        for q in decoded_query.split("&"):
             parts = q.split("=")
-            param_name = unquote_plus(parts[0])
+            param_name = parts[0]
             try:
-                value = parts[1] and unquote_plus(parts[1]) or None
+                value = parts[1]
             except IndexError:
                 if not allow_none:
                     continue
                 value = None
 
             params.add(param_name, value)
-
         return params
 
     @classmethod
